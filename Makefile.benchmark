@@ -1,0 +1,77 @@
+# TSDB Performance Benchmark Makefile
+# 分别编译和运行三个时序数据库的性能测试
+
+CC = gcc
+CFLAGS = -Wall -Wstd=c99 -O2 -g -lm
+
+# 默认测试数据点数
+NUM_POINTS = 10000
+
+.PHONY: all glm5 minimax25 kimi25 clean
+
+all: glm5 minimax25 kimi25
+
+# glm5 benchmark
+glm5:
+	@echo "========================================"
+	@echo "Building glm5 benchmark..."
+	@echo "========================================"
+	$(CC) benchmark.c -o benchmark_glm5 \
+		-DBENCHMARK_GLM5 \
+		-I. \
+		-L./glm5 -ltsdb \
+		$(CFLAGS)
+	@echo "Running glm5 benchmark with $(NUM_POINTS) points..."
+	@./benchmark_glm5 $(NUM_POINTS)
+
+# minimax25 benchmark
+minimax25:
+	@echo "========================================"
+	@echo "Building minimax25 benchmark..."
+	@echo "========================================"
+	$(CC) benchmark.c -o benchmark_minimax25 \
+		-DBENCHMARK_MINIMAX25 \
+		-I. \
+		-L./minimax25 -ltsdb25 \
+		$(CFLAGS)
+	@echo "Running minimax25 benchmark with $(NUM_POINTS) points..."
+	@./benchmark_minimax25 $(NUM_POINTS)
+
+# kimi25 benchmark
+kimi25:
+	@echo "========================================"
+	@echo "Building kimi25 benchmark..."
+	@echo "========================================"
+	$(CC) benchmark.c -o benchmark_kimi25 \
+		-DBENCHMARK_KIMI25 \
+		-I. \
+		-L./kimi25 -lkimi_tsdb \
+		$(CFLAGS)
+	@echo "Running kimi25 benchmark with $(NUM_POINTS) points..."
+	@./benchmark_kimi25 $(NUM_POINTS)
+
+# Run all benchmarks
+run-all: all
+	@echo "\nAll benchmarks completed!"
+
+# Clean
+clean:
+	rm -f benchmark_glm5 benchmark_minimax25 benchmark_kimi25
+	rm -rf glm5_bench_data minimax25_bench_data kimi25_bench_data
+
+# Help
+help:
+	@echo "TSDB Performance Benchmark"
+	@echo ""
+	@echo "Usage:"
+	@echo "  make glm5         - Run glm5 benchmark"
+	@echo "  make minimax25    - Run minimax25 benchmark"
+	@echo "  make kimi25       - Run kimi25 benchmark"
+	@echo "  make all          - Run all benchmarks"
+	@echo "  make clean        - Clean build artifacts"
+	@echo ""
+	@echo "Options:"
+	@echo "  NUM_POINTS=50000  - Set number of test points (default: 10000)"
+	@echo ""
+	@echo "Example:"
+	@echo "  make all NUM_POINTS=50000"

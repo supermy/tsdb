@@ -1,0 +1,47 @@
+# Object files
+*.o
+*.obj
+
+# Libraries
+*.a
+*.lib
+*.so
+*.dylib
+
+# Executables
+example
+benchmark_glm5
+benchmark_minimax25
+benchmark_kimi25
+
+# Build directories
+obj/
+bin/
+
+# Test data directories
+*_data/
+tsdb_data/
+tsdb25_data/
+kimi_data/
+glm5_bench_data/
+minimax25_bench_data/
+kimi25_bench_data/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+*.dSYM/
+
+# Debug files
+*.dSYM/
+*.su
+
+# Backup files
+*.bak
+*.backup
