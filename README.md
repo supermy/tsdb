@@ -1,20 +1,35 @@
 # TSDB - 时序数据库C语言实现
 
-本项目包含三个独立的时序数据库（Time Series Database）C语言实现，分别位于 `glm5`、`minimax25` 和 `kimi25` 目录下。
+本项目包含六个独立的时序数据库（Time Series Database）C语言实现：
+
+- **原生实现**: `glm5`、`minimax25`、`kimi25`
+- **RocksDB版本**: `rocksdb-minimax25`、`rocksdb-glm5`、`rocksdb-kimi25`
+
+---
 
 ## 项目概览
 
+### 原生版本
+
+| 项目 | 版本 | 代码规模 | 架构风格 | 存储引擎 | 适用场景 |
+|------|------|----------|----------|----------|----------|
+| **glm5** | 1.0.0 | ~2500行 | 分层模块化 | 自定义二进制 | 学习架构、数据压缩场景 |
+| **minimax25** | 2.5.0 | ~2800行 | 分层模块化 | 自定义二进制 | 生产原型、二次开发 |
+| **kimi25** | 2.5.0 | ~570行 | 单体极简 | 内存存储 | 嵌入式，教学示例 |
+
+### RocksDB版本
+
 | 项目 | 版本 | 代码规模 | 架构风格 | 适用场景 |
 |------|------|----------|----------|----------|
-| **glm5** | 1.0.0 | ~2500行 | 分层模块化 | 学习架构、数据压缩场景 |
-| **minimax25** | 2.5.0 | ~2800行 | 分层模块化 | 生产原型、二次开发 |
-| **kimi25** | 2.5.0 | ~570行 | 单体极简 | 嵌入式、教学示例 |
+| **rocksdb-glm5** | 1.0.0 | ~1200行 | 模块化 | 生产环境 |
+| **rocksdb-minimax25** | 2.5.0-rc1 | ~550行 | 单文件完整 | 生产原型 |
+| **rocksdb-kimi25** | 1.0.0 | ~250行 | 单文件极简 | 嵌入式/原型 |
 
 ---
 
 ## 快速开始
 
-### 编译所有项目
+### 编译所有原生版本
 
 ```bash
 # 编译 glm5
@@ -27,120 +42,41 @@ cd minimax25 && make && cd ..
 cd kimi25 && make && cd ..
 ```
 
+### 编译所有RocksDB版本
+
+```bash
+# RocksDB依赖 (macOS)
+brew install rocksdb
+
+# 编译 rocksdb-glm5
+cd rocksdb-glm5 && make && cd ..
+
+# 编译 rocksdb-minimax25
+cd rocksdb-minimax25 && make && cd ..
+
+# 编译 rocksdb-kimi25
+cd rocksdb-kimi25 && make && cd ..
+```
+
 ### 运行示例
 
 ```bash
-# glm5
+# 原生版本
 cd glm5 && ./example
-
-# minimax25
 cd minimax25 && ./example
-
-# kimi25
 cd kimi25 && ./example
+
+# RocksDB版本
+cd rocksdb-glm5 && ./example
+cd rocksdb-minimax25 && ./example
+cd rocksdb-kimi25 && ./example
 ```
 
 ---
 
 ## 项目详细说明
 
-### 1. glm5 - 模块化时序数据库
-
-**特点：**
-- 8个功能模块，职责分离清晰
-- 完整的压缩模块（Snappy/ZSTD/LZ4/Gorilla）
-- B+树风格索引
-- 支持复杂查询表达式（AND/OR/NOT）
-
-**文件结构：**
-```
-glm5/
-├── tsdb.h/c          # 主API入口
-├── tsdb_types.h/c    # 数据类型定义
-├── tsdb_config.h/c   # 配置管理
-├── tsdb_storage.h/c  # 存储引擎
-├── tsdb_index.h/c    # B+树索引
-├── tsdb_query.h/c    # 查询引擎
-├── tsdb_cache.h/c    # LRU缓存
-├── tsdb_compress.h/c # 压缩模块
-└── example.c
-```
-
-**使用示例：**
-```c
-#include "tsdb.h"
-
-// 打开数据库
-tsdb_t* db = tsdb_open("./data", NULL);
-
-// 写入数据
-tsdb_point_t* point = tsdb_point_create("cpu_usage", ts);
-tsdb_point_add_tag(point, "host", "server01");
-tsdb_point_add_field_float(point, "value", 75.5);
-tsdb_write(db, point);
-
-// 查询数据
-tsdb_query_builder_t* query = tsdb_query_builder_create();
-tsdb_query_builder_set_measurement(query, "cpu_usage");
-tsdb_result_set_t result;
-tsdb_query(db, query, &result);
-
-// 关闭数据库
-tsdb_close(db);
-```
-
----
-
-### 2. minimax25 - 功能完整的时序数据库
-
-**特点：**
-- 功能最完整，最接近生产可用
-- 支持WAL（Write-Ahead Logging）保证数据安全
-- 哈希索引（2048桶），O(1)查找效率
-- 11种聚合类型（含标准差、中位数、P95/P99）
-- 支持正则匹配查询
-
-**文件结构：**
-```
-minimax25/
-├── tsdb25.h/c        # 主API
-├── tsdb25_types.h/c  # 类型定义
-├── tsdb25_config.h/c # 配置
-├── tsdb25_storage.h/c# 存储引擎
-├── tsdb25_index.h/c  # 哈希索引
-├── tsdb25_query.h/c  # 查询引擎
-├── tsdb25_cache.h/c  # LRU缓存
-├── tsdb25_wal.h/c    # WAL日志
-└── example.c
-```
-
-**使用示例：**
-```c
-#include "tsdb25.h"
-
-// 打开数据库
-tsdb25_t* db = tsdb25_open("./data", NULL);
-
-// 写入数据
-tsdb25_point_t* p = tsdb25_point_new("cpu_usage", ts);
-tsdb25_point_tag(p, "host", "server01");
-tsdb25_point_field_f64(p, "value", 75.5);
-tsdb25_write(db, p);
-
-// 聚合查询
-tsdb25_query_t* q = tsdb25_query_create();
-tsdb25_query_measurement(q, "cpu_usage");
-tsdb25_query_set_agg(q, TSDB25_AGG_AVG, "value");
-tsdb25_agg_result_set_t result;
-tsdb25_query_agg(db, q, &result);
-
-// 关闭数据库
-tsdb25_close(db);
-```
-
----
-
-### 3. kimi25 - 极简时序数据库
+### 1. kimi25 - 极简时序数据库
 
 **特点：**
 - 单文件实现（kimi_tsdb.h/c），仅570行代码
@@ -160,35 +96,147 @@ kimi25/
 ```c
 #include "kimi_tsdb.h"
 
-// 打开数据库
 kimi_tsdb_t* db = kimi_tsdb_open("./data", NULL);
 
-// 写入数据
 kimi_point_t* p = kimi_point_create("cpu_usage", kimi_now());
 kimi_point_add_tag(p, "host", "server01");
 kimi_point_add_field_f64(p, "usage", 75.5);
 kimi_write(db, p);
-kimi_point_destroy(p);
 
-// 查询数据
 kimi_query_t* q = kimi_query_new("cpu_usage");
 kimi_query_range(q, (kimi_range_t){start, end});
 kimi_result_t result;
 kimi_query(db, q, &result);
 
-// 聚合查询
-kimi_agg_result_t agg;
-kimi_query_agg(db, q, KIMI_AGG_AVG, "usage", &agg);
-
-// 清理
-kimi_result_free(&result);
-kimi_query_free(q);
 kimi_tsdb_close(db);
 ```
 
 ---
 
+### 2. minimax25 - 功能完整的时序数据库
+
+**特点：**
+- 功能最完整，最接近生产可用
+- 支持WAL（Write-Ahead Logging）保证数据安全
+- 哈希索引（2048桶），O(1)查找效率
+- 11种聚合类型（含标准差、中位数、P95/P99）
+- 支持正则匹配查询
+
+**文件结构：**
+```
+minimax25/
+├── tsdb25.h/c          # 主API
+├── tsdb25_types.h/c    # 类型定义
+├── tsdb25_config.h/c   # 配置
+├── tsdb25_storage.h/c  # 存储引擎
+├── tsdb25_index.h/c    # 哈希索引
+├── tsdb25_query.h/c    # 查询引擎
+├── tsdb25_cache.h/c    # LRU缓存
+├── tsdb25_wal.h/c      # WAL日志
+└── example.c
+```
+
+---
+
+### 3. glm5 - 模块化时序数据库
+
+**特点：**
+- 8个功能模块，职责分离清晰
+- 完整的压缩模块（Snappy/ZSTD/LZ4/Gorilla）
+- B+树风格索引
+- 支持复杂查询表达式（AND/OR/NOT）
+
+**文件结构：**
+```
+glm5/
+├── tsdb.h/c            # 主API入口
+├── tsdb_types.h/c      # 数据类型定义
+├── tsdb_config.h/c      # 配置管理
+├── tsdb_storage.h/c     # 存储引擎
+├── tsdb_index.h/c       # B+树索引
+├── tsdb_query.h/c       # 查询引擎
+├── tsdb_cache.h/c       # LRU缓存
+├── tsdb_compress.h/c    # 压缩模块
+└── example.c
+```
+
+---
+
+### 4. rocksdb-kimi25 - RocksDB极简版
+
+**特点：**
+- 基于RocksDB的极简实现（~250行）
+- 利用RocksDB的LSM-Tree优化
+- 无独立索引，完全依赖RocksDB
+
+**文件结构：**
+```
+rocksdb-kimi25/
+├── rkimi_tsdb.h        # 头文件
+├── rkimi_tsdb.c        # 实现
+└── example.c
+```
+
+**使用示例：**
+```c
+#include "rkimi_tsdb.h"
+
+rkimi_db_t* db = rkimi_open("data");
+
+rkimi_point_t* p = rkimi_point_new("cpu", ts);
+rkimi_tag(p, "host", "s1");
+rkimi_val(p, 75.5);
+rkimi_write(db, p);
+
+rkimi_agg_result_t agg;
+rkimi_agg(db, "cpu", &range, RKIMI_AGG_AVG, &agg);
+
+rkimi_close(db);
+```
+
+---
+
+### 5. rocksdb-minimax25 - RocksDB完整版
+
+**特点：**
+- 基于RocksDB的完整实现
+- 完善的配置管理
+- 9种聚合类型
+
+**文件结构：**
+```
+rocksdb-minimax25/
+├── rocksdb_tsdb.h      # 头文件
+├── rocksdb_tsdb.c      # 实现
+└── example.c
+```
+
+---
+
+### 6. rocksdb-glm5 - RocksDB模块化版
+
+**特点：**
+- 基于RocksDB的模块化架构
+- 独立哈希索引系统
+- 最完整的功能支持
+
+**文件结构：**
+```
+rocksdb-glm5/
+├── rtsdb.h/c            # 主API
+├── rtsdb_types.h/c      # 类型定义
+├── rtsdb_config.h/c     # 配置
+├── rtsdb_storage.h/c    # RocksDB存储
+├── rtsdb_index.h/c      # 哈希索引
+├── rtsdb_query.h/c     # 查询引擎
+└── example.c
+```
+
+---
+
 ## 功能对比
+
+### 原生版本
 
 | 功能 | glm5 | minimax25 | kimi25 |
 |------|------|-----------|--------|
@@ -202,9 +250,20 @@ kimi_tsdb_close(db);
 | 正则匹配 | ❌ | ✅ | ❌ |
 | 持久化 | ✅ | ✅ | ⚠️ |
 
+### RocksDB版本
+
+| 功能 | rocksdb-glm5 | rocksdb-minimax25 | rocksdb-kimi25 |
+|------|--------------|-------------------|----------------|
+| 数据写入 | ✅ | ✅ | ✅ |
+| 批量写入 | ✅ | ✅ | ✅ |
+| 时间范围查询 | ✅ | ✅ | ✅ |
+| 聚合类型 | 9种 | 9种 | 5种 |
+| 独立索引 | ✅ | ❌ | ❌ |
+| 索引持久化 | ✅ | ❌ | ❌ |
+
 ---
 
-## 技术细节对比
+## 架构对比
 
 ### 索引实现
 
@@ -213,14 +272,18 @@ kimi_tsdb_close(db);
 | glm5 | B+树风格 (order=8) | O(log n) |
 | minimax25 | **哈希表 (2048桶)** | **O(1)** |
 | kimi25 | 哈希表 (1024桶) | O(1) |
+| rocksdb-glm5 | 独立哈希索引 | O(1) |
+| rocksdb-minimax25 | RocksDB原生 | O(n) |
+| rocksdb-kimi25 | RocksDB原生 | O(n) |
 
 ### 存储引擎
 
-| 项目 | 文件格式 | 块大小 | 压缩支持 |
-|------|----------|--------|----------|
-| glm5 | 自定义二进制 | 64KB | Snappy/ZSTD/LZ4/Gorilla |
-| minimax25 | 自定义二进制 | 8192点 | Snappy/ZSTD/Gorilla |
-| kimi25 | 内存为主 | 动态扩容 | 无 |
+| 项目 | 存储引擎 | 压缩支持 |
+|------|----------|----------|
+| glm5 | 自定义二进制 | Snappy/ZSTD/LZ4/Gorilla |
+| minimax25 | 自定义二进制 | Snappy/ZSTD/Gorilla |
+| kimi25 | 内存存储 | 无 |
+| rocksdb-* | **RocksDB (LSM-Tree)** | Snappy |
 
 ---
 
@@ -228,9 +291,23 @@ kimi_tsdb_close(db);
 
 - **编译器**: GCC 或 Clang，支持 C99 标准
 - **操作系统**: Linux/macOS/Unix（使用 POSIX API）
-- **依赖库**: 
+- **依赖 (RocksDB版本)**: 
+  - RocksDB库
+  - pthread
   - 标准C库
-  - math库（-lm）
+
+### 安装RocksDB
+
+```bash
+# macOS
+brew install rocksdb
+
+# Ubuntu/Debian
+sudo apt-get install librocksdb-dev
+
+# CentOS/RHEL
+sudo yum install rocksdb-devel
+```
 
 ---
 
@@ -239,10 +316,20 @@ kimi_tsdb_close(db);
 | 使用场景 | 推荐项目 | 理由 |
 |----------|----------|------|
 | 学习TSDB原理 | **kimi25** | 代码极简，易于理解 |
-| 生产环境原型 | **minimax25** | 功能最完整，有WAL保证数据安全 |
+| 生产环境 | **minimax25** | 功能完整，有WAL保证数据安全 |
 | 需要数据压缩 | **glm5** | 压缩模块完整实现 |
 | 嵌入式/IoT设备 | **kimi25** | 代码量小，易于移植 |
 | 二次开发基础 | **minimax25** | 架构清晰，功能丰富 |
+| RocksDB后端 | **rocksdb-glm5** | 独立索引，性能好 |
+| 简单RocksDB集成 | **rocksdb-kimi25** | 代码最少 |
+
+---
+
+## 文档
+
+- [功能对比报告](PERFORMANCE.md)
+- [RocksDB版本对比](ROCKSDB_COMPARISON.md)
+- [索引实现对比](INDEX_COMPARISON.md)
 
 ---
 

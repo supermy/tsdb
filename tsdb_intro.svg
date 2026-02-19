@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f3460"/>
+      <stop offset="100%" style="stop-color:#0a1628"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#e94560"/>
+      <stop offset="100%" style="stop-color:#ff6b6b"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="600" fill="url(#bg)"/>
+  
+  <!-- Title -->
+  <text x="400" y="50" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#fff" text-anchor="middle">TSDB - 时序数据库 C语言实现</text>
+  <text x="400" y="80" font-family="Arial, sans-serif" font-size="16" fill="#888" text-anchor="middle">6个高性能时序数据库实现</text>
+  
+  <!-- Native Section -->
+  <text x="150" y="130" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#e94560" text-anchor="middle">🚀 原生版本</text>
+  
+  <!-- kimi25 -->
+  <rect x="30" y="150" width="230" height="100" rx="10" fill="url(#card)" stroke="#e94560" stroke-width="2"/>
+  <text x="145" y="175" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#fff" text-anchor="middle">kimi25</text>
+  <text x="145" y="195" font-family="Arial, sans-serif" font-size="12" fill="#888" text-anchor="middle">~570行 | 极简设计</text>
+  <text x="145" y="215" font-family="Arial, sans-serif" font-size="11" fill="#666" text-anchor="middle">内存存储 | 8种聚合</text>
+  <text x="145" y="235" font-family="Arial, sans-serif" font-size="10" fill="#e94560" text-anchor="middle">学习/嵌入式</text>
+  
+  <!-- minimax25 -->
+  <rect x="285" y="150" width="230" height="100" rx="10" fill="url(#card)" stroke="#4ecca3" stroke-width="2"/>
+  <text x="400" y="175" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#fff" text-anchor="middle">minimax25</text>
+  <text x="400" y="195" font-family="Arial, sans-serif" font-size="12" fill="#888" text-anchor="middle">~2800行 | 功能完整</text>
+  <text x="400" y="215" font-family="Arial, sans-serif" font-size="11" fill="#666" text-anchor="middle">WAL | 哈希索引 | 11种聚合</text>
+  <text x="400" y="235" font-family="Arial, sans-serif" font-size="10" fill="#4ecca3" text-anchor="middle">生产原型</text>
+  
+  <!-- glm5 -->
+  <rect x="540" y="150" width="230" height="100" rx="10" fill="url(#card)" stroke="#ffc947" stroke-width="2"/>
+  <text x="655" y="175" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#fff" text-anchor="middle">glm5</text>
+  <text x="655" y="195" font-family="Arial, sans-serif" font-size="12" fill="#888" text-anchor="middle">~2500行 | 模块化</text>
+  <text x="655" y="215" font-family="Arial, sans-serif" font-size="11" fill="#666" text-anchor="middle">压缩模块 | B+树索引</text>
+  <text x="655" y="235" font-family="Arial, sans-serif" font-size="10" fill="#ffc947" text-anchor="middle">数据压缩</text>
+  
+  <!-- RocksDB Section -->
+  <text x="400" y="290" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#4ecca3" text-anchor="middle">💾 RocksDB版本</text>
+  
+  <!-- rocksdb-kimi25 -->
+  <rect x="30" y="310" width="230" height="100" rx="10" fill="url(#card)" stroke="#4ecca3" stroke-width="2"/>
+  <text x="145" y="335" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#fff" text-anchor="middle">rocksdb-kimi25</text>
+  <text x="145" y="355" font-family="Arial, sans-serif" font-size="12" fill="#888" text-anchor="middle">~250行 | 极简集成</text>
+  <text x="145" y="375" font-family="Arial, sans-serif" font-size="11" fill="#666" text-anchor="middle">LSM-Tree | 5种聚合</text>
+  <text x="145" y="395" font-family="Arial, sans-serif" font-size="10" fill="#4ecca3" text-anchor="middle">快速集成</text>
+  
+  <!-- rocksdb-minimax25 -->
+  <rect x="285" y="310" width="230" height="100" rx="10" fill="url(#card)" stroke="#a29bfe" stroke-width="2"/>
+  <text x="400" y="335" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#fff" text-anchor="middle">rocksdb-minimax25</text>
+  <text x="400" y="355" font-family="Arial, sans-serif" font-size="12" fill="#888" text-anchor="middle">~550行 | 功能完整</text>
+  <text x="400" y="375" font-family="Arial, sans-serif" font-size="11" fill="#666" text-anchor="middle">配置管理 | 9种聚合</text>
+  <text x="400" y="395" font-family="Arial, sans-serif" font-size="10" fill="#a29bfe" text-anchor="middle">生产原型</text>
+  
+  <!-- rocksdb-glm5 -->
+  <rect x="540" y="310" width="230" height="100" rx="10" fill="url(#card)" stroke="#fd79a8" stroke-width="2"/>
+  <text x="655" y="335" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#fff" text-anchor="middle">rocksdb-glm5</text>
+  <text x="655" y="355" font-family="Arial, sans-serif" font-size="12" fill="#888" text-anchor="middle">~1200行 | 模块化</text>
+  <text x="655" y="375" font-family="Arial, sans-serif" font-size="11" fill="#666" text-anchor="middle">独立索引 | 9种聚合</text>
+  <text x="655" y="395" font-family="Arial, sans-serif" font-size="10" fill="#fd79a8" text-anchor="middle">生产环境</text>
+  
+  <!-- Performance -->
+  <rect x="30" y="440" width="740" height="60" rx="8" fill="url(#card)" stroke="#333" stroke-width="1"/>
+  <text x="400" y="465" font-family="Arial, sans-serif" font-size="14" fill="#fff" text-anchor="middle">⚡ 性能对比</text>
+  <text x="400" y="485" font-family="Arial, sans-serif" font-size="11" fill="#888" text-anchor="middle">
+    <tspan x="150">kimi25: ~930K pts/s</tspan>
+    <tspan x="400">minimax25: ~50K pts/s (WAL)</tspan>
+    <tspan x="650">glm5: ~870K pts/s</tspan>
+  </text>
+  
+  <!-- Footer -->
+  <text x="400" y="545" font-family="Arial, sans-serif" font-size="12" fill="#666" text-anchor="middle">GitHub: github.com/supermy/tsdb</text>
+  <text x="400" y="565" font-family="Arial, sans-serif" font-size="10" fill="#444" text-anchor="middle">Made with ❤️ | C Language | Open Source</text>
+</svg>

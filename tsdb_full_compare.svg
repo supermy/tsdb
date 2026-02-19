@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 650" width="800" height="650">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f3460"/>
+      <stop offset="100%" style="stop-color:#0a1628"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="650" fill="url(#bg)"/>
+  
+  <!-- Title -->
+  <text x="400" y="35" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#fff" text-anchor="middle">TSDB 时序数据库 - 6版本全对比</text>
+  
+  <!-- Native Section -->
+  <text x="150" y="70" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#e94560" text-anchor="middle">🚀 原生版本</text>
+  
+  <!-- kimi25 -->
+  <rect x="20" y="85" width="250" height="85" rx="8" fill="url(#card)" stroke="#e94560" stroke-width="1.5"/>
+  <text x="145" y="105" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#fff" text-anchor="middle">kimi25</text>
+  <text x="145" y="122" font-family="Arial, sans-serif" font-size="10" fill="#888" text-anchor="middle">~570行 | 内存存储</text>
+  <text x="145" y="138" font-family="Arial, sans-serif" font-size="10" fill="#e94560" text-anchor="middle">写入: ~930K pts/s</text>
+  <text x="145" y="155" font-family="Arial, sans-serif" font-size="9" fill="#666" text-anchor="middle">学习/嵌入式</text>
+  
+  <!-- minimax25 -->
+  <rect x="275" y="85" width="250" height="85" rx="8" fill="url(#card)" stroke="#4ecca3" stroke-width="1.5"/>
+  <text x="400" y="105" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#fff" text-anchor="middle">minimax25</text>
+  <text x="400" y="122" font-family="Arial, sans-serif" font-size="10" fill="#888" text-anchor="middle">~2800行 | WAL+索引</text>
+  <text x="400" y="138" font-family="Arial, sans-serif" font-size="10" fill="#4ecca3" text-anchor="middle">写入: ~50K pts/s | 11种聚合</text>
+  <text x="400" y="155" font-family="Arial, sans-serif" font-size="9" fill="#666" text-anchor="middle">生产原型</text>
+  
+  <!-- glm5 -->
+  <rect x="530" y="85" width="250" height="85" rx="8" fill="url(#card)" stroke="#ffc947" stroke-width="1.5"/>
+  <text x="655" y="105" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#fff" text-anchor="middle">glm5</text>
+  <text x="655" y="122" font-family="Arial, sans-serif" font-size="10" fill="#888" text-anchor="middle">~2500行 | B+树+压缩</text>
+  <text x="655" y="138" font-family="Arial, sans-serif" font-size="10" fill="#ffc947" text-anchor="middle">写入: ~870K pts/s</text>
+  <text x="655" y="155" font-family="Arial, sans-serif" font-size="9" fill="#666" text-anchor="middle">数据压缩</text>
+  
+  <!-- RocksDB Section -->
+  <text x="150" y="200" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#4ecca3" text-anchor="middle">💾 RocksDB版本</text>
+  
+  <!-- rocksdb-kimi25 -->
+  <rect x="20" y="215" width="250" height="85" rx="8" fill="url(#card)" stroke="#4ecca3" stroke-width="1.5"/>
+  <text x="145" y="235" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#fff" text-anchor="middle">rocksdb-kimi25</text>
+  <text x="145" y="252" font-family="Arial, sans-serif" font-size="10" fill="#888" text-anchor="middle">~250行 | LSM-Tree</text>
+  <text x="145" y="268" font-family="Arial, sans-serif" font-size="10" fill="#4ecca3" text-anchor="middle">写入: ~50K pts/s</text>
+  <text x="145" y="285" font-family="Arial, sans-serif" font-size="9" fill="#666" text-anchor="middle">快速集成</text>
+  
+  <!-- rocksdb-minimax25 -->
+  <rect x="275" y="215" width="250" height="85" rx="8" fill="url(#card)" stroke="#a29bfe" stroke-width="1.5"/>
+  <text x="400" y="235" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#fff" text-anchor="middle">rocksdb-minimax25</text>
+  <text x="400" y="252" font-family="Arial, sans-serif" font-size="10" fill="#888" text-anchor="middle">~550行 | 配置完整</text>
+  <text x="400" y="268" font-family="Arial, sans-serif" font-size="10" fill="#a29bfe" text-anchor="middle">写入: ~20K pts/s | 9种聚合</text>
+  <text x="400" y="285" font-family="Arial, sans-serif" font-size="9" fill="#666" text-anchor="middle">生产原型</text>
+  
+  <!-- rocksdb-glm5 -->
+  <rect x="530" y="215" width="250" height="85" rx="8" fill="url(#card)" stroke="#fd79a8" stroke-width="1.5"/>
+  <text x="655" y="235" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#fff" text-anchor="middle">rocksdb-glm5</text>
+  <text x="655" y="252" font-family="Arial, sans-serif" font-size="10" fill="#888" text-anchor="middle">~1200行 | 独立索引</text>
+  <text x="655" y="268" font-family="Arial, sans-serif" font-size="10" fill="#fd79a8" text-anchor="middle">写入: ~30K pts/s | 9种聚合</text>
+  <text x="655" y="285" font-family="Arial, sans-serif" font-size="9" fill="#666" text-anchor="middle">生产环境</text>
+  
+  <!-- Comparison Table -->
+  <text x="400" y="330" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#fff" text-anchor="middle">📊 核心指标对比</text>
+  
+  <!-- Table Header -->
+  <rect x="30" y="345" width="740" height="25" rx="4" fill="#0a1628"/>
+  <text x="150" y="362" font-family="Arial, sans-serif" font-size="11" fill="#888" text-anchor="middle">版本</text>
+  <text x="320" y="362" font-family="Arial, sans-serif" font-size="11" fill="#888" text-anchor="middle">写入速度</text>
+  <text x="450" y="362" font-family="Arial, sans-serif" font-size="11" fill="#888" text-anchor="middle">索引</text>
+  <text x="580" y="362" font-family="Arial, sans-serif" font-size="11" fill="#888" text-anchor="middle">聚合</text>
+  <text x="700" y="362" font-family="Arial, sans-serif" font-size="11" fill="#888" text-anchor="middle">适用</text>
+  
+  <!-- Row 1 -->
+  <rect x="30" y="370" width="740" height="28" rx="3" fill="#0f1729"/>
+  <text x="150" y="388" font-family="Arial, sans-serif" font-size="10" fill="#e94560" text-anchor="middle">kimi25</text>
+  <text x="320" y="388" font-family="Arial, sans-serif" font-size="10" fill="#fff" text-anchor="middle">🥇 ~930K/s</text>
+  <text x="450" y="388" font-family="Arial, sans-serif" font-size="10" fill="#888" text-anchor="middle">无</text>
+  <text x="580" y="388" font-family="Arial, sans-serif" font-size="10" fill="#888" text-anchor="middle">8种</text>
+  <text x="700" y="388" font-family="Arial, sans-serif" font-size="10" fill="#666" text-anchor="middle">学习</text>
+  
+  <!-- Row 2 -->
+  <rect x="30" y="398" width="740" height="28" rx="3" fill="#0a1628"/>
+  <text x="150" y="416" font-family="Arial, sans-serif" font-size="10" fill="#4ecca3" text-anchor="middle">minimax25</text>
+  <text x="320" y="416" font-family="Arial, sans-serif" font-size="10" fill="#fff" text-anchor="middle">~50K/s</text>
+  <text x="450" y="416" font-family="Arial, sans-serif" font-size="10" fill="#4ecca3" text-anchor="middle">哈希O(1)</text>
+  <text x="580" y="416" font-family="Arial, sans-serif" font-size="10" fill="#4ecca3" text-anchor="middle">11种</text>
+  <text x="700" y="416" font-family="Arial, sans-serif" font-size="10" fill="#666" text-anchor="middle">生产</text>
+  
+  <!-- Row 3 -->
+  <rect x="30" y="426" width="740" height="28" rx="3" fill="#0f1729"/>
+  <text x="150" y="444" font-family="Arial, sans-serif" font-size="10" fill="#ffc947" text-anchor="middle">glm5</text>
+  <text x="320" y="444" font-family="Arial, sans-serif" font-size="10" fill="#fff" text-anchor="middle">~870K/s</text>
+  <text x="450" y="444" font-family="Arial, sans-serif" font-size="10" fill="#ffc947" text-anchor="middle">B+树</text>
+  <text x="580" y="444" font-family="Arial, sans-serif" font-size="10" fill="#888" text-anchor="middle">7种</text>
+  <text x="700" y="444" font-family="Arial, sans-serif" font-size="10" fill="#666" text-anchor="middle">压缩</text>
+  
+  <!-- Row 4 -->
+  <rect x="30" y="454" width="740" height="28" rx="3" fill="#0a1628"/>
+  <text x="150" y="472" font-family="Arial, sans-serif" font-size="10" fill="#4ecca3" text-anchor="middle">rocksdb-kimi25</text>
+  <text x="320" y="472" font-family="Arial, sans-serif" font-size="10" fill="#fff" text-anchor="middle">~50K/s</text>
+  <text x="450" y="472" font-family="Arial, sans-serif" font-size="10" fill="#666" text-anchor="middle">原生</text>
+  <text x="580" y="472" font-family="Arial, sans-serif" font-size="10" fill="#666" text-anchor="middle">5种</text>
+  <text x="700" y="472" font-family="Arial, sans-serif" font-size="10" fill="#666" text-anchor="middle">集成</text>
+  
+  <!-- Row 5 -->
+  <rect x="30" y="482" width="740" height="28" rx="3" fill="#0f1729"/>
+  <text x="150" y="500" font-family="Arial, sans-serif" font-size="10" fill="#a29bfe" text-anchor="middle">rocksdb-minimax25</text>
+  <text x="320" y="500" font-family="Arial, sans-serif" font-size="10" fill="#fff" text-anchor="middle">~20K/s</text>
+  <text x="450" y="500" font-family="Arial, sans-serif" font-size="10" fill="#666" text-anchor="middle">原生</text>
+  <text x="580" y="500" font-family="Arial, sans-serif" font-size="10" fill="#a29bfe" text-anchor="middle">9种</text>
+  <text x="700" y="500" font-family="Arial, sans-serif" font-size="10" fill="#666" text-anchor="middle">原型</text>
+  
+  <!-- Row 6 -->
+  <rect x="30" y="510" width="740" height="28" rx="3" fill="#0a1628"/>
+  <text x="150" y="528" font-family="Arial, sans-serif" font-size="10" fill="#fd79a8" text-anchor="middle">rocksdb-glm5</text>
+  <text x="320" y="528" font-family="Arial, sans-serif" font-size="10" fill="#fff" text-anchor="middle">~30K/s</text>
+  <text x="450" y="528" font-family="Arial, sans-serif" font-size="10" fill="#fd79a8" text-anchor="middle">哈希O(1)</text>
+  <text x="580" y="528" font-family="Arial, sans-serif" font-size="10" fill="#fd79a8" text-anchor="middle">9种</text>
+  <text x="700" y="528" font-family="Arial, sans-serif" font-size="10" fill="#666" text-anchor="middle">生产</text>
+  
+  <!-- Footer -->
+  <text x="400" y="575" font-family="Arial, sans-serif" font-size="12" fill="#666" text-anchor="middle">📦 GitHub: github.com/supermy/tsdb | C Language | Open Source</text>
+</svg>
