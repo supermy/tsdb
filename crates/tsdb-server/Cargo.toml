@@ -1,0 +1,21 @@
+[package]
+name = "tsdb-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tsdb-types = { workspace = true }
+tsdb-core = { workspace = true }
+tsdb-config = { workspace = true }
+tsdb-query = { workspace = true }
+tsdb-aggregate = { workspace = true }
+tsdb-chart = { workspace = true }
+tsdb-dashboard = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rmp-serde = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }

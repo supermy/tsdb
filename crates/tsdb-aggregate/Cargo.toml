@@ -1,0 +1,13 @@
+[package]
+name = "tsdb-aggregate"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tsdb-types = { workspace = true }
+tsdb-config = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+chrono = { workspace = true }

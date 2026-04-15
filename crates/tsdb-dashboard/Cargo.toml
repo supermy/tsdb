@@ -1,0 +1,14 @@
+[package]
+name = "tsdb-dashboard"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tsdb-types = { workspace = true }
+tsdb-core = { workspace = true }
+tsdb-query = { workspace = true }
+tsdb-chart = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }

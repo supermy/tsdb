@@ -1,0 +1,22 @@
+[package]
+name = "tsdb-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "tsdb-cli"
+path = "src/main.rs"
+
+[dependencies]
+tsdb-types = { workspace = true }
+tsdb-core = { workspace = true }
+tsdb-config = { workspace = true }
+tsdb-query = { workspace = true }
+tsdb-server = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true }
+chrono = { workspace = true }

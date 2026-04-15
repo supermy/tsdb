@@ -1,0 +1,11 @@
+[package]
+name = "tsdb-plugin"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tsdb-types = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }

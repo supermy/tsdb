@@ -1,0 +1,15 @@
+[package]
+name = "tsdb-query"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tsdb-types = { workspace = true }
+tsdb-core = { workspace = true }
+tsdb-index = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+sqlparser = { workspace = true }
+chrono = { workspace = true }
