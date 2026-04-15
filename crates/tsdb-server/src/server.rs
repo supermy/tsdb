@@ -1,13 +1,14 @@
-use crate::protocol::{Request, Response, FieldValueProto, decode_request, encode_response};
+use crate::protocol::{Request, Response, decode_request, encode_response};
 use tsdb_core::storage::StorageEngine;
 use tsdb_core::storage::cf_manager::CfConfig;
+use tsdb_core::error::{TsdbError, Result};
 use tsdb_config::TsdbConfig;
 use tsdb_query::QueryEngine;
 use tsdb_types::model::{DataPoint, FieldValue};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::io::{Read, Write};
-use tracing::{info, error, warn};
+use tracing::{info, error};
 
 pub struct TsdbServer {
     config: TsdbConfig,
@@ -24,7 +25,7 @@ impl TsdbServer {
         }
     }
 
-    pub fn start(&mut self) -> anyhow::Result<()> {
+    pub fn start(&mut self) -> Result<()> {
         let addr = format!("{}:{}", self.config.server.host, self.config.server.port);
         info!("TSDB server starting on {}", addr);
 
@@ -35,7 +36,7 @@ impl TsdbServer {
         info!("HTTP API available at http://{}/api/v1/", http_addr);
 
         let listener = std::net::TcpListener::bind(&addr)
-            .map_err(|e| anyhow::anyhow!("failed to bind {}: {}", addr, e))?;
+            .map_err(|e| TsdbError::Network(format!("failed to bind {}: {}", addr, e)))?;
 
         info!("TSDB server listening on {}", addr);
 
@@ -55,14 +56,15 @@ impl TsdbServer {
         Ok(())
     }
 
-    pub fn start_with_http(&mut self) -> anyhow::Result<()> {
+    pub fn start_with_http(&mut self) -> Result<()> {
         let http_port = self.config.server.port + 1;
         let http_addr = format!("{}:{}", self.config.server.host, http_port);
 
         self.ensure_default_database()?;
 
         let tcp_addr = format!("{}:{}", self.config.server.host, self.config.server.port);
-        let listener = std::net::TcpListener::bind(&tcp_addr)?;
+        let listener = std::net::TcpListener::bind(&tcp_addr)
+            .map_err(|e| TsdbError::Network(format!("bind failed: {}", e)))?;
 
         info!("TSDB server listening on {}", tcp_addr);
         info!("HTTP API at http://{}/api/v1/", http_addr);
@@ -91,7 +93,7 @@ impl TsdbServer {
         Ok(())
     }
 
-    fn handle_connection(&self, stream: &mut std::net::TcpStream) -> anyhow::Result<()> {
+    fn handle_connection(&self, stream: &mut std::net::TcpStream) -> Result<()> {
         let mut len_buf = [0u8; 4];
         stream.read_exact(&mut len_buf)?;
         let len = u32::from_be_bytes(len_buf) as usize;
@@ -100,7 +102,7 @@ impl TsdbServer {
         stream.read_exact(&mut data)?;
 
         let request = decode_request(&data)
-            .ok_or_else(|| anyhow::anyhow!("failed to decode request"))?;
+            .ok_or_else(|| TsdbError::Protocol("failed to decode request".into()))?;
 
         let response = self.process_request(request);
 
@@ -168,7 +170,7 @@ impl TsdbServer {
         }
     }
 
-    fn ensure_default_database(&mut self) -> anyhow::Result<()> {
+    fn ensure_default_database(&mut self) -> Result<()> {
         let data_dir = self.config.storage.data_dir.join("default");
         std::fs::create_dir_all(&data_dir)?;
 

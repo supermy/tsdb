@@ -92,6 +92,78 @@ impl InvertedIndex {
         }
         bitmap
     }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&(self.postings.len() as u32).to_le_bytes());
+        for (key, bitmap) in &self.postings {
+            let key_bytes = key.as_bytes();
+            buf.extend_from_slice(&(key_bytes.len() as u32).to_le_bytes());
+            buf.extend_from_slice(key_bytes);
+            let mut bm_data = Vec::new();
+            bitmap.serialize_into(&mut bm_data).unwrap_or(());
+            buf.extend_from_slice(&(bm_data.len() as u32).to_le_bytes());
+            buf.extend_from_slice(&bm_data);
+        }
+
+        buf.extend_from_slice(&(self.series_tags.len() as u32).to_le_bytes());
+        for (&id, tags) in &self.series_tags {
+            buf.extend_from_slice(&id.to_le_bytes());
+            buf.extend_from_slice(&(tags.len() as u32).to_le_bytes());
+            for (k, v) in tags {
+                buf.extend_from_slice(&(k.len() as u32).to_le_bytes());
+                buf.extend_from_slice(k.as_bytes());
+                buf.extend_from_slice(&(v.len() as u32).to_le_bytes());
+                buf.extend_from_slice(v.as_bytes());
+            }
+        }
+        buf
+    }
+
+    pub fn deserialize(data: &[u8]) -> Option<Self> {
+        let mut offset = 0;
+        let postings_count = u32::from_le_bytes(data[offset..offset + 4].try_into().ok()?) as usize;
+        offset += 4;
+
+        let mut postings = HashMap::new();
+        for _ in 0..postings_count {
+            let key_len = u32::from_le_bytes(data[offset..offset + 4].try_into().ok()?) as usize;
+            offset += 4;
+            let key = String::from_utf8_lossy(&data[offset..offset + key_len]).to_string();
+            offset += key_len;
+            let bm_len = u32::from_le_bytes(data[offset..offset + 4].try_into().ok()?) as usize;
+            offset += 4;
+            let bitmap = RoaringBitmap::deserialize_from(&data[offset..offset + bm_len]).ok()?;
+            offset += bm_len;
+            postings.insert(key, bitmap);
+        }
+
+        let series_count = u32::from_le_bytes(data[offset..offset + 4].try_into().ok()?) as usize;
+        offset += 4;
+
+        let mut series_tags = HashMap::new();
+        for _ in 0..series_count {
+            let id = u64::from_le_bytes(data[offset..offset + 8].try_into().ok()?);
+            offset += 8;
+            let tags_count = u32::from_le_bytes(data[offset..offset + 4].try_into().ok()?) as usize;
+            offset += 4;
+            let mut tags = Vec::with_capacity(tags_count);
+            for _ in 0..tags_count {
+                let k_len = u32::from_le_bytes(data[offset..offset + 4].try_into().ok()?) as usize;
+                offset += 4;
+                let k = String::from_utf8_lossy(&data[offset..offset + k_len]).to_string();
+                offset += k_len;
+                let v_len = u32::from_le_bytes(data[offset..offset + 4].try_into().ok()?) as usize;
+                offset += 4;
+                let v = String::from_utf8_lossy(&data[offset..offset + v_len]).to_string();
+                offset += v_len;
+                tags.push((k, v));
+            }
+            series_tags.insert(id, tags);
+        }
+
+        Some(Self { postings, series_tags })
+    }
 }
 
 #[cfg(test)]

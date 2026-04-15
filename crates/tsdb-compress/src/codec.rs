@@ -16,7 +16,7 @@ pub struct DataBlock {
     pub fields: HashMap<String, Vec<FieldValue>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CompressedBlock {
     pub timestamps: Vec<u8>,
     pub float_fields: HashMap<String, Vec<u8>>,

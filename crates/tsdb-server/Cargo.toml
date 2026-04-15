@@ -19,3 +19,4 @@ serde_json = { workspace = true }
 rmp-serde = { workspace = true }
 chrono = { workspace = true }
 tokio = { workspace = true }
+nng = "1"

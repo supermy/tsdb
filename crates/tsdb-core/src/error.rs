@@ -34,6 +34,33 @@ pub enum TsdbError {
 
     #[error("serialization error: {0}")]
     Serialization(String),
+
+    #[error("network error: {0}")]
+    Network(String),
+
+    #[error("protocol error: {0}")]
+    Protocol(String),
+
+    #[error("plugin error: {0}")]
+    Plugin(String),
+
+    #[error("nng error: {0}")]
+    Nng(String),
+
+    #[error("dashboard error: {0}")]
+    Dashboard(String),
+
+    #[error("not found: {0}")]
+    NotFound(String),
+
+    #[error("internal error: {0}")]
+    Internal(String),
+}
+
+impl From<serde_json::Error> for TsdbError {
+    fn from(e: serde_json::Error) -> Self {
+        TsdbError::Serialization(e.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, TsdbError>;

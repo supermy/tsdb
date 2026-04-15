@@ -1,6 +1,7 @@
 use crate::error::{Result, TsdbError};
+use crate::storage::options::TsdbOptions;
 use chrono::NaiveDate;
-use rocksdb::{Options, MultiThreaded};
+use rocksdb::MultiThreaded;
 use std::sync::Arc;
 use tracing::info;
 
@@ -47,9 +48,9 @@ impl CfManager {
 
         let is_hot = self.is_hot_date(date);
         let cf_opts = if is_hot {
-            self.hot_cf_options()
+            TsdbOptions::hot_cf_opts()
         } else {
-            self.cold_cf_options()
+            TsdbOptions::cold_cf_opts()
         };
 
         info!("creating CF {} (hot={})", cf_name, is_hot);
@@ -103,19 +104,5 @@ impl CfManager {
         let today = chrono::Local::now().date_naive();
         let diff = (today - date).num_days();
         diff >= 0 && (diff as u64) <= self.config.hot_days
-    }
-
-    fn hot_cf_options(&self) -> Options {
-        let mut opts = Options::default();
-        opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
-        opts.set_level_compaction_dynamic_level_bytes(true);
-        opts
-    }
-
-    fn cold_cf_options(&self) -> Options {
-        let mut opts = Options::default();
-        opts.set_compression_type(rocksdb::DBCompressionType::Zstd);
-        opts.set_disable_auto_compactions(true);
-        opts
     }
 }

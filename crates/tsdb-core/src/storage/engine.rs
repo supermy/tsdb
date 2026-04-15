@@ -1,8 +1,10 @@
 use crate::error::{Result, TsdbError};
-use crate::rowkey::{RowKey, Qualifier, timestamp_to_cf_name};
+use crate::rowkey::{RowKey, Qualifier, timestamp_to_cf_name, compute_tags_hash, align_to_block_start, SEPARATOR};
 use crate::storage::cf_manager::{CfManager, CfConfig, METADATA_CF};
+use crate::storage::merge_operand::{MergedBlock, MergedField, encode_merge_operand, detect_value_format, ValueFormat};
+use crate::storage::options::TsdbOptions;
 use tsdb_types::model::{DataPoint, FieldValue, Tags};
-use rocksdb::{DB, Options, WriteBatch, MultiThreaded};
+use rocksdb::{WriteBatch, MultiThreaded};
 use std::path::Path;
 use std::sync::Arc;
 use chrono::NaiveDate;
@@ -16,11 +18,9 @@ pub struct StorageEngine {
 
 impl StorageEngine {
     pub fn open(path: &Path, cf_config: CfConfig) -> Result<Self> {
-        let mut opts = Options::default();
-        opts.create_if_missing(true);
-        opts.create_missing_column_families(true);
+        let opts = TsdbOptions::default_opts();
 
-        let metadata_cf_opts = Options::default();
+        let metadata_cf_opts = TsdbOptions::metadata_cf_opts();
         let cfs = vec![(
             METADATA_CF,
             metadata_cf_opts,
@@ -92,6 +92,63 @@ impl StorageEngine {
         Ok(())
     }
 
+    pub fn write_merged(&self, dp: &DataPoint) -> Result<()> {
+        let row_key = RowKey::from_data_point(dp);
+        let block_start = row_key.block_start_timestamp;
+        let cf_name = timestamp_to_cf_name(dp.timestamp);
+
+        let date = micros_to_date(dp.timestamp);
+        self.cf_manager.ensure_cf_for_date(date)?;
+
+        let cf = self.cf_manager.cf_handle(&cf_name)?;
+        let rk_bytes = row_key.encode();
+
+        for (field_name, field_value) in &dp.fields {
+            let qualifier = Qualifier::new(field_name, dp.timestamp, block_start);
+            let operand = encode_merge_operand(
+                field_name,
+                qualifier.microsecond_offset,
+                field_value,
+            );
+
+            self.db.merge_cf(&cf, &rk_bytes, operand)
+                .map_err(|e| TsdbError::Storage(format!("merge failed: {}", e)))?;
+        }
+
+        Ok(())
+    }
+
+    pub fn write_merged_batch(&self, data_points: &[DataPoint]) -> Result<()> {
+        let mut batch = WriteBatch::default();
+
+        for dp in data_points {
+            let row_key = RowKey::from_data_point(dp);
+            let block_start = row_key.block_start_timestamp;
+            let cf_name = timestamp_to_cf_name(dp.timestamp);
+
+            let date = micros_to_date(dp.timestamp);
+            self.cf_manager.ensure_cf_for_date(date)?;
+
+            let cf = self.cf_manager.cf_handle(&cf_name)?;
+            let rk_bytes = row_key.encode();
+
+            for (field_name, field_value) in &dp.fields {
+                let qualifier = Qualifier::new(field_name, dp.timestamp, block_start);
+                let operand = encode_merge_operand(
+                    field_name,
+                    qualifier.microsecond_offset,
+                    field_value,
+                );
+                batch.merge_cf(&cf, &rk_bytes, operand);
+            }
+        }
+
+        self.db.write(batch)
+            .map_err(|e| TsdbError::Storage(format!("merged batch write failed: {}", e)))?;
+
+        Ok(())
+    }
+
     pub fn read_range(
         &self,
         measurement: &str,
@@ -99,7 +156,7 @@ impl StorageEngine {
         start_micros: i64,
         end_micros: i64,
     ) -> Result<Vec<DataPoint>> {
-        let tags_hash = crate::rowkey::compute_tags_hash(tags);
+        let tags_hash = compute_tags_hash(tags);
         let mut results = Vec::new();
 
         let start_date = micros_to_date(start_micros);
@@ -111,9 +168,9 @@ impl StorageEngine {
             if let Ok(cf) = self.cf_manager.cf_handle(&cf_name) {
                 let prefix_key = {
                     let mut buf = measurement.as_bytes().to_vec();
-                    buf.push(crate::rowkey::SEPARATOR);
+                    buf.push(SEPARATOR);
                     buf.extend_from_slice(&tags_hash.to_be_bytes());
-                    buf.push(crate::rowkey::SEPARATOR);
+                    buf.push(SEPARATOR);
                     buf
                 };
 
@@ -127,25 +184,59 @@ impl StorageEngine {
                         break;
                     }
 
-                    let sep_pos = match key.iter().rposition(|&b| b == 0) {
-                        Some(pos) => pos,
-                        None => continue,
-                    };
-
-                    let rk_data = &key[..sep_pos];
-                    let qual_data = &key[sep_pos + 1..];
-
-                    if let Some(rk) = RowKey::decode(rk_data) {
-                        if let Some(qual) = Qualifier::decode(qual_data) {
-                            let ts = rk.block_start_timestamp + qual.microsecond_offset as i64;
-                            if ts >= start_micros && ts <= end_micros {
-                                let fv = decode_field_value(&value);
-                                let mut dp = DataPoint::new(&rk.measurement, ts);
-                                dp.tags = tags.clone();
-                                if let Some(v) = fv {
-                                    dp.fields.insert(qual.field_name, v);
+                    match detect_value_format(&value) {
+                        ValueFormat::Merged => {
+                            let sep_pos = match key.iter().rposition(|&b| b == 0) {
+                                Some(pos) => pos,
+                                None => {
+                                    if let Some(rk) = RowKey::decode(&key) {
+                                        if let Some(block) = MergedBlock::decode(&value) {
+                                            let dps = block.to_data_points(&rk.measurement, rk.block_start_timestamp, tags.clone());
+                                            for dp in dps {
+                                                if dp.timestamp >= start_micros && dp.timestamp <= end_micros {
+                                                    results.push(dp);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    continue;
                                 }
-                                results.push(dp);
+                            };
+
+                            let rk_data = &key[..sep_pos];
+                            if let Some(rk) = RowKey::decode(rk_data) {
+                                if let Some(block) = MergedBlock::decode(&value) {
+                                    let dps = block.to_data_points(&rk.measurement, rk.block_start_timestamp, tags.clone());
+                                    for dp in dps {
+                                        if dp.timestamp >= start_micros && dp.timestamp <= end_micros {
+                                            results.push(dp);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        ValueFormat::Raw => {
+                            let sep_pos = match key.iter().rposition(|&b| b == 0) {
+                                Some(pos) => pos,
+                                None => continue,
+                            };
+
+                            let rk_data = &key[..sep_pos];
+                            let qual_data = &key[sep_pos + 1..];
+
+                            if let Some(rk) = RowKey::decode(rk_data) {
+                                if let Some(qual) = Qualifier::decode(qual_data) {
+                                    let ts = rk.block_start_timestamp + qual.microsecond_offset as i64;
+                                    if ts >= start_micros && ts <= end_micros {
+                                        let fv = decode_field_value(&value);
+                                        let mut dp = DataPoint::new(&rk.measurement, ts);
+                                        dp.tags = tags.clone();
+                                        if let Some(v) = fv {
+                                            dp.fields.insert(qual.field_name, v);
+                                        }
+                                        results.push(dp);
+                                    }
+                                }
                             }
                         }
                     }
@@ -157,6 +248,40 @@ impl StorageEngine {
 
         results.sort_by_key(|dp| dp.timestamp);
         Ok(results)
+    }
+
+    pub fn get_point_merged(
+        &self,
+        measurement: &str,
+        tags: &Tags,
+        timestamp: i64,
+    ) -> Result<Option<DataPoint>> {
+        let tags_hash = compute_tags_hash(tags);
+        let block_start = align_to_block_start(timestamp);
+        let cf_name = timestamp_to_cf_name(timestamp);
+
+        let cf = self.cf_manager.cf_handle(&cf_name)?;
+
+        let key = {
+            let mut buf = measurement.as_bytes().to_vec();
+            buf.push(SEPARATOR);
+            buf.extend_from_slice(&tags_hash.to_be_bytes());
+            buf.push(SEPARATOR);
+            buf.extend_from_slice(&block_start.to_be_bytes());
+            buf
+        };
+
+        match self.db.get_cf(&cf, &key) {
+            Ok(Some(value)) => {
+                if let Some(block) = MergedBlock::decode(&value) {
+                    Ok(block.get_data_point_at(measurement, block_start, timestamp, tags.clone()))
+                } else {
+                    Ok(None)
+                }
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(TsdbError::Storage(format!("get failed: {}", e))),
+        }
     }
 
     pub fn cleanup(&self) -> Result<Vec<String>> {

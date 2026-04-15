@@ -89,6 +89,40 @@ impl IndexManager {
             .map(|idx| idx.series_count())
             .unwrap_or(0)
     }
+
+    pub fn serialize_all(&self) -> HashMap<String, Vec<u8>> {
+        let mut result = HashMap::new();
+        for (measurement, sl) in &self.time_index {
+            let key = format!("index:time:{}", measurement);
+            result.insert(key, sl.serialize());
+        }
+        for (measurement, idx) in &self.tag_index {
+            let key = format!("index:tag:{}", measurement);
+            result.insert(key, idx.serialize());
+        }
+        result.insert("index:meta:next_series_id".to_string(), self.next_series_id.to_le_bytes().to_vec());
+        result
+    }
+
+    pub fn deserialize_entry(&mut self, key: &str, data: &[u8]) -> bool {
+        if let Some(measurement) = key.strip_prefix("index:time:") {
+            if let Some(sl) = SkipList::deserialize(data) {
+                self.time_index.insert(measurement.to_string(), sl);
+                return true;
+            }
+        } else if let Some(measurement) = key.strip_prefix("index:tag:") {
+            if let Some(idx) = InvertedIndex::deserialize(data) {
+                self.tag_index.insert(measurement.to_string(), idx);
+                return true;
+            }
+        } else if key == "index:meta:next_series_id" {
+            if data.len() >= 8 {
+                self.next_series_id = u64::from_le_bytes(data[0..8].try_into().unwrap_or([0; 8]));
+                return true;
+            }
+        }
+        false
+    }
 }
 
 #[cfg(test)]

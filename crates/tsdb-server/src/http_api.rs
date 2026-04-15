@@ -1,4 +1,5 @@
 use tsdb_core::storage::StorageEngine;
+use tsdb_core::error::{TsdbError, Result};
 use tsdb_query::QueryEngine;
 use tsdb_types::model::{DataPoint, FieldValue};
 use std::sync::Arc;
@@ -34,7 +35,7 @@ fn handle_http_request(
     stream: &mut std::net::TcpStream,
     db: &Arc<StorageEngine>,
     query_engine: &QueryEngine,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     let mut buf = [0u8; 4096];
     let n = stream.read(&mut buf)?;
     if n == 0 {
@@ -74,7 +75,7 @@ fn handle_http_request(
             }
         }
         ("GET", "/api/v1/dashboard/performance") => {
-            match handle_performance_dashboard(db) {
+            match handle_performance_dashboard() {
                 Ok(html) => http_response_html(200, &html),
                 Err(e) => http_response(500, &format!(r#"{{"error":"{}"}}"#, e)),
             }
@@ -87,9 +88,9 @@ fn handle_http_request(
     Ok(())
 }
 
-fn handle_write(body: &str, db: &StorageEngine) -> anyhow::Result<()> {
+fn handle_write(body: &str, db: &StorageEngine) -> Result<()> {
     let write_req: serde_json::Value = serde_json::from_str(body)
-        .map_err(|e| anyhow::anyhow!("invalid JSON: {}", e))?;
+        .map_err(|e| TsdbError::Serialization(format!("invalid JSON: {}", e)))?;
 
     let measurement = write_req["measurement"].as_str().unwrap_or("unknown");
     let timestamp = write_req["timestamp"].as_i64()
@@ -126,12 +127,13 @@ fn handle_write(body: &str, db: &StorageEngine) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_query(body: &str, db: &StorageEngine, query_engine: &QueryEngine) -> anyhow::Result<String> {
+fn handle_query(body: &str, db: &StorageEngine, query_engine: &QueryEngine) -> Result<String> {
     let query_req: serde_json::Value = serde_json::from_str(body)
-        .map_err(|e| anyhow::anyhow!("invalid JSON: {}", e))?;
+        .map_err(|e| TsdbError::Serialization(format!("invalid JSON: {}", e)))?;
 
     let sql = query_req["sql"].as_str().unwrap_or("");
-    let result = query_engine.execute(sql, db)?;
+    let result = query_engine.execute(sql, db)
+        .map_err(|e| TsdbError::Query(e.to_string()))?;
 
     let columns = &result.columns;
     let rows: Vec<Vec<serde_json::Value>> = result.rows.iter().map(|row| {
@@ -151,15 +153,16 @@ fn handle_query(body: &str, db: &StorageEngine, query_engine: &QueryEngine) -> a
     Ok(json.to_string())
 }
 
-fn handle_chart(body: &str, db: &StorageEngine, query_engine: &QueryEngine) -> anyhow::Result<String> {
+fn handle_chart(body: &str, db: &StorageEngine, query_engine: &QueryEngine) -> Result<String> {
     let chart_req: serde_json::Value = serde_json::from_str(body)
-        .map_err(|e| anyhow::anyhow!("invalid JSON: {}", e))?;
+        .map_err(|e| TsdbError::Serialization(format!("invalid JSON: {}", e)))?;
 
     let sql = chart_req["sql"].as_str().unwrap_or("");
     let chart_type = chart_req["chart_type"].as_str().unwrap_or("line");
     let title = chart_req["title"].as_str().unwrap_or("");
 
-    let result = query_engine.execute(sql, db)?;
+    let result = query_engine.execute(sql, db)
+        .map_err(|e| TsdbError::Query(e.to_string()))?;
 
     let mut chart = tsdb_chart::TimeSeriesChart::new(tsdb_chart::ChartConfig {
         title: title.to_string(),
@@ -263,14 +266,15 @@ fn handle_business_dashboard(
     sql_str: &str,
     db: &Arc<StorageEngine>,
     query_engine: &QueryEngine,
-) -> anyhow::Result<String> {
-    let result = query_engine.execute(sql_str, db)?;
+) -> Result<String> {
+    let result = query_engine.execute(sql_str, db)
+        .map_err(|e| TsdbError::Query(e.to_string()))?;
     let dash = tsdb_dashboard::BusinessDashboard::from_query_result(&result.columns, &result.rows);
     let html = tsdb_dashboard::DashboardRenderer::render_business_html(&dash);
     Ok(html)
 }
 
-fn handle_performance_dashboard(db: &Arc<StorageEngine>) -> anyhow::Result<String> {
+fn handle_performance_dashboard() -> Result<String> {
     let mut dash = tsdb_dashboard::PerformanceDashboard::new();
     for gauge in tsdb_dashboard::PerformanceDashboard::default_gauges(50000.0, 120000.0, 5.2, 12.5) {
         dash.add_gauge(gauge);

@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 tsdb-types = { workspace = true }
 tsdb-config = { workspace = true }
+tsdb-compress = { workspace = true }
 rocksdb = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
@@ -14,6 +15,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 byteorder = { workspace = true }
+bincode = "1"
 
 [dev-dependencies]
 tempfile = { workspace = true }

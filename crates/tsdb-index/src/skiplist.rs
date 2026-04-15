@@ -118,6 +118,47 @@ impl SkipList {
         self.len == 0
     }
 
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        let data_nodes: Vec<&SkipNode> = self.nodes.iter().filter(|n| !n.is_sentinel).collect();
+        buf.extend_from_slice(&(data_nodes.len() as u32).to_le_bytes());
+        for node in &data_nodes {
+            buf.extend_from_slice(&node.key.to_le_bytes());
+            buf.extend_from_slice(&(node.block_offsets.len() as u32).to_le_bytes());
+            for &offset in &node.block_offsets {
+                buf.extend_from_slice(&offset.to_le_bytes());
+            }
+        }
+        buf
+    }
+
+    pub fn deserialize(data: &[u8]) -> Option<Self> {
+        if data.len() < 4 { return None; }
+        let node_count = u32::from_le_bytes(data[0..4].try_into().ok()?) as usize;
+        let mut sl = Self::new(16);
+        let mut offset = 4;
+        for _ in 0..node_count {
+            if offset + 12 > data.len() { return None; }
+            let key = i64::from_le_bytes(data[offset..offset + 8].try_into().ok()?);
+            offset += 8;
+            let off_count = u32::from_le_bytes(data[offset..offset + 4].try_into().ok()?) as usize;
+            offset += 4;
+            for j in 0..off_count {
+                if offset + 8 > data.len() { return None; }
+                let block_offset = u64::from_le_bytes(data[offset..offset + 8].try_into().ok()?);
+                offset += 8;
+                if j == 0 {
+                    sl.insert(key, block_offset);
+                } else {
+                    if let Some(node) = sl.nodes.iter_mut().find(|n| n.key == key && !n.is_sentinel) {
+                        node.block_offsets.push(block_offset);
+                    }
+                }
+            }
+        }
+        Some(sl)
+    }
+
     fn random_level(&mut self) -> usize {
         let mut level = 1;
         self.rng_state = self.rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
