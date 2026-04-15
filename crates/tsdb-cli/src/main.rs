@@ -1,74 +1,189 @@
+//! TSDB 命令行工具 - TSDB Command Line Interface
+//!
+//! 本模块提供 TSDB 的命令行交互界面，支持以下操作：
+//! - `start`: 启动 TSDB 服务端
+//! - `query`: 执行 SQL 查询
+//! - `write`: 写入数据点
+//! - `ping`: 健康检查
+//! - `list`: 列出数据库
+//! - `load-tsbs`: 加载 TSBS 基准测试数据
+//! - `generate-tsbs`: 生成 TSBS 合成数据
+//!
+//! ## 使用示例
+//!
+//! ```bash
+//! # 启动服务端
+//! tsdb-cli start --config config.ini
+//!
+//! # 执行查询
+//! tsdb-cli --host 127.0.0.1 --port 7878 query "SELECT * FROM cpu"
+//!
+//! # 写入数据
+//! tsdb-cli write --measurement cpu --tags host=server01 --fields usage=0.75
+//!
+//! # 健康检查
+//! tsdb-cli ping
+//!
+//! # 加载 TSBS 数据
+//! tsdb-cli load-tsbs --input data.json --batch-size 1000
+//! ```
+
 use clap::{Parser, Subcommand};
 use tsdb_config::TsdbConfig;
 use std::path::PathBuf;
 
+/// TSDB 命令行客户端
+///
+/// 使用 `clap` 库解析命令行参数，支持子命令模式。
 #[derive(Parser)]
 #[command(name = "tsdb-cli", version = "0.1.0", about = "TSDB command line client")]
 struct Cli {
+    /// 子命令
     #[command(subcommand)]
     command: Commands,
 
+    /// 服务端主机地址
     #[arg(long, default_value = "127.0.0.1")]
     host: String,
 
+    /// 服务端端口号
     #[arg(long, default_value_t = 7878)]
     port: u16,
 }
 
+/// 子命令枚举
+///
+/// 定义所有支持的命令行操作。
 #[derive(Subcommand)]
 enum Commands {
+    /// 启动 TSDB 服务端
+    ///
+    /// 启动一个完整的 TSDB 服务实例，包括：
+    /// - TCP 服务（MessagePack 协议）
+    /// - HTTP API 服务
+    /// - 存储引擎
     Start {
+        /// 配置文件路径
         #[arg(long, default_value = "config.ini")]
         config: PathBuf,
     },
+
+    /// 执行 SQL 查询
+    ///
+    /// 向服务端发送 SQL 查询语句并显示结果。
+    ///
+    /// # 示例
+    ///
+    /// ```bash
+    /// tsdb-cli query "SELECT * FROM cpu WHERE host='server01' LIMIT 10"
+    /// ```
     Query {
+        /// SQL 查询语句
         sql: String,
     },
+
+    /// 写入数据点
+    ///
+    /// 向服务端写入单个数据点。
+    ///
+    /// # 示例
+    ///
+    /// ```bash
+    /// tsdb-cli write --measurement cpu --tags host=server01,region=us-west --fields usage=0.75,system=0.25
+    /// ```
     Write {
+        /// 指标名称
         #[arg(long)]
         measurement: String,
+        /// 标签列表（格式：key1=value1,key2=value2）
         #[arg(long)]
         tags: Option<String>,
+        /// 字段列表（格式：key1=value1,key2=value2）
         #[arg(long)]
         fields: String,
+        /// 时间戳（微秒，0 表示当前时间）
         #[arg(long, default_value_t = 0)]
         timestamp: i64,
     },
+
+    /// 健康检查
+    ///
+    /// 向服务端发送 Ping 请求，检查服务是否正常运行。
     Ping,
+
+    /// 列出数据库
+    ///
+    /// 显示服务端所有可用的数据库。
     List,
+
+    /// 加载 TSBS 基准测试数据
+    ///
+    /// 从 JSON 文件批量加载 TSBS 格式的数据。
+    /// 用于性能测试和数据导入。
+    ///
+    /// # 示例
+    ///
+    /// ```bash
+    /// tsdb-cli load-tsbs --input data.json --batch-size 1000
+    /// ```
     LoadTsbs {
+        /// 输入文件路径（JSON 格式，每行一个数据点）
         #[arg(long)]
         input: PathBuf,
+        /// 批量写入大小
         #[arg(long, default_value_t = 1000)]
         batch_size: usize,
     },
+
+    /// 生成 TSBS 合成数据
+    ///
+    /// 生成模拟的 DevOps 监控数据，用于测试和基准测试。
+    ///
+    /// # 示例
+    ///
+    /// ```bash
+    /// tsdb-cli generate-tsbs --scale 100 --duration 24h --output data.json
+    /// ```
     GenerateTsbs {
+        /// 设备数量（每个设备生成一条时间序列）
         #[arg(long, default_value_t = 100)]
         scale: usize,
+        /// 数据持续时间（支持 h/d/m/s 后缀）
         #[arg(long, default_value = "24h")]
         duration: String,
+        /// 输出文件路径
         #[arg(long, default_value = "tsbs_data.json")]
         output: PathBuf,
     },
 }
 
+/// 程序入口函数
 fn main() -> anyhow::Result<()> {
+    // 解析命令行参数
     let cli = Cli::parse();
 
+    // 根据子命令执行相应操作
     match cli.command {
+        // 启动服务端
         Commands::Start { config } => {
+            // 加载配置文件
             let config = TsdbConfig::load_or_default(&config);
+            // 创建并启动服务端
             let mut server = tsdb_server::TsdbServer::new(config);
             server.start()?;
         }
+        // 执行查询
         Commands::Query { sql } => {
             println!("Query: {}", sql);
             let addr = format!("{}:{}", cli.host, cli.port);
             send_request(&addr, tsdb_server::protocol::Request::Query { sql })?;
         }
+        // 写入数据
         Commands::Write { measurement, tags, fields, timestamp } => {
+            // 解析标签和字段
             let tag_pairs = parse_kv_pairs(tags.as_deref());
             let field_pairs = parse_field_values(&fields);
+            // 如果未指定时间戳，使用当前时间
             let ts = if timestamp == 0 {
                 chrono::Utc::now().timestamp_micros()
             } else {
@@ -82,17 +197,21 @@ fn main() -> anyhow::Result<()> {
                 timestamp: ts,
             })?;
         }
+        // 健康检查
         Commands::Ping => {
             let addr = format!("{}:{}", cli.host, cli.port);
             send_request(&addr, tsdb_server::protocol::Request::Ping)?;
         }
+        // 列出数据库
         Commands::List => {
             let addr = format!("{}:{}", cli.host, cli.port);
             send_request(&addr, tsdb_server::protocol::Request::ListDatabases)?;
         }
+        // 加载 TSBS 数据
         Commands::LoadTsbs { input, batch_size } => {
             load_tsbs_data(&input, batch_size)?;
         }
+        // 生成 TSBS 数据
         Commands::GenerateTsbs { scale, duration, output } => {
             generate_tsbs_data(scale, &duration, &output)?;
         }
@@ -101,10 +220,36 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// 加载 TSBS 基准测试数据
+///
+/// 从 JSON 文件读取 TSBS 格式的数据并批量写入服务端。
+/// 支持进度显示和吞吐量统计。
+///
+/// # 参数
+///
+/// - `path`: 输入文件路径
+/// - `batch_size`: 批量写入大小
+///
+/// # 返回值
+///
+/// 成功返回 `Ok(())`，失败返回错误
+///
+/// # 数据格式
+///
+/// 每行一个 JSON 对象：
+/// ```json
+/// {
+///   "measurement": "cpu",
+///   "timestamp": "2025-01-01T00:00:00Z",
+///   "tags": {"host": "server01"},
+///   "fields": {"usage": 0.75}
+/// }
+/// ```
 fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<()> {
     use std::io::BufRead;
     use tsdb_server::protocol::{Request, FieldValueProto};
 
+    // 打开文件并创建缓冲读取器
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);
     let addr = format!("127.0.0.1:7878");
@@ -113,22 +258,26 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
     let mut batch = Vec::new();
     let start = std::time::Instant::now();
 
+    // 逐行读取并解析
     for line in reader.lines() {
         let line = line?;
         let line = line.trim();
         if line.is_empty() { continue; }
 
+        // 解析 JSON
         let json: serde_json::Value = match serde_json::from_str(line) {
             Ok(v) => v,
             Err(_) => continue,
         };
 
+        // 提取字段
         let measurement = json["measurement"].as_str().unwrap_or("unknown").to_string();
         let timestamp = json["timestamp"].as_str()
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.timestamp_micros())
             .unwrap_or_else(|| chrono::Utc::now().timestamp_micros());
 
+        // 解析标签
         let mut tags = Vec::new();
         if let Some(tags_obj) = json["tags"].as_object() {
             for (k, v) in tags_obj {
@@ -138,6 +287,7 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
             }
         }
 
+        // 解析字段值
         let mut fields = Vec::new();
         if let Some(fields_obj) = json["fields"].as_object() {
             for (k, v) in fields_obj {
@@ -156,14 +306,17 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
             }
         }
 
+        // 添加到批次
         batch.push(Request::Write { measurement, tags, fields, timestamp });
 
+        // 批量发送
         if batch.len() >= batch_size {
             for req in batch.drain(..) {
                 if let Ok(()) = send_request_silent(&addr, req) {
                     total += 1;
                 }
             }
+            // 显示进度
             if total % 10000 == 0 {
                 let elapsed = start.elapsed().as_secs_f64();
                 let throughput = total as f64 / elapsed;
@@ -172,12 +325,14 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
         }
     }
 
+    // 发送剩余数据
     for req in batch.drain(..) {
         if let Ok(()) = send_request_silent(&addr, req) {
             total += 1;
         }
     }
 
+    // 显示最终统计
     let elapsed = start.elapsed().as_secs_f64();
     let throughput = total as f64 / elapsed;
     println!("\nLoaded {} points in {:.2}s ({:.0} pts/sec)", total, elapsed, throughput);
@@ -185,6 +340,9 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
     Ok(())
 }
 
+/// 静默发送请求（不显示响应）
+///
+/// 用于批量操作时减少输出干扰。
 fn send_request_silent(addr: &str, request: tsdb_server::protocol::Request) -> anyhow::Result<()> {
     use std::io::{Read, Write};
     use tsdb_server::protocol::{encode_request, decode_response};
@@ -193,12 +351,14 @@ fn send_request_silent(addr: &str, request: tsdb_server::protocol::Request) -> a
     stream.set_write_timeout(Some(std::time::Duration::from_secs(5)))?;
     stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
 
+    // 编码并发送请求
     let data = encode_request(&request);
     let len = data.len() as u32;
     stream.write_all(&len.to_be_bytes())?;
     stream.write_all(&data)?;
     stream.flush()?;
 
+    // 读取响应（但不处理）
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf)?;
     let resp_len = u32::from_be_bytes(len_buf) as usize;
@@ -208,27 +368,51 @@ fn send_request_silent(addr: &str, request: tsdb_server::protocol::Request) -> a
     Ok(())
 }
 
+/// 生成 TSBS 合成数据
+///
+/// 生成模拟的 DevOps CPU 监控数据，用于性能测试。
+///
+/// # 参数
+///
+/// - `scale`: 设备数量
+/// - `duration`: 数据持续时间
+/// - `output`: 输出文件路径
+///
+/// # 数据模型
+///
+/// 每个设备生成一条 CPU 时间序列，包含以下字段：
+/// - usage_user: 用户态 CPU 使用率
+/// - usage_system: 内核态 CPU 使用率
+/// - usage_idle: 空闲 CPU 比例
+/// - usage_nice: nice 值 CPU 使用率
+/// - usage_iowait: I/O 等待 CPU 比例
 fn generate_tsbs_data(scale: usize, duration: &str, output: &std::path::Path) -> anyhow::Result<()> {
+    // 解析持续时间
     let duration_secs = parse_duration(duration)?;
-    let interval_secs: u64 = 10;
+    let interval_secs: u64 = 10;  // 10 秒采集间隔
     let points_per_device = (duration_secs / interval_secs) as usize;
     let total_points = scale * points_per_device;
 
+    // 显示生成参数
     println!("Generating synthetic TSBS data:");
     println!("  Devices: {}", scale);
     println!("  Duration: {}s", duration_secs);
     println!("  Interval: {}s", interval_secs);
     println!("  Total points: {}", total_points);
 
+    // 创建输出文件
     let mut file: Box<dyn std::io::Write> = Box::new(std::io::BufWriter::new(std::fs::File::create(output)?));
     let base_ts = chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")?.timestamp_micros();
 
     let mut count = 0u64;
+    // 遍历每个设备
     for device_id in 0..scale {
         let hostname = format!("host_{}", device_id);
+        // 遍历每个时间点
         for point_idx in 0..points_per_device {
             let ts = base_ts + (point_idx as i64 * interval_secs as i64 * 1_000_000);
 
+            // 构造 JSON 数据点
             let json = serde_json::json!({
                 "measurement": "cpu",
                 "timestamp": chrono::DateTime::from_timestamp(ts / 1_000_000, 0)
@@ -240,6 +424,7 @@ fn generate_tsbs_data(scale: usize, duration: &str, output: &std::path::Path) ->
                     "datacenter": format!("dc_{}", device_id % 5),
                 },
                 "fields": {
+                    // 模拟 CPU 使用率数据
                     "usage_user": 50.0 + (device_id as f64 * 0.1 + point_idx as f64 * 0.01) % 50.0,
                     "usage_system": 20.0 + (device_id as f64 * 0.05) % 30.0,
                     "usage_idle": 100.0 - (50.0 + (device_id as f64 * 0.1) % 50.0) - (20.0 + (device_id as f64 * 0.05) % 30.0),
@@ -252,6 +437,7 @@ fn generate_tsbs_data(scale: usize, duration: &str, output: &std::path::Path) ->
             count += 1;
         }
 
+        // 显示进度
         if device_id % 100 == 0 {
             eprint!("\rGenerated {}/{} devices ({:.0}%)", device_id, scale, device_id as f64 / scale as f64 * 100.0);
         }
@@ -261,6 +447,14 @@ fn generate_tsbs_data(scale: usize, duration: &str, output: &std::path::Path) ->
     Ok(())
 }
 
+/// 解析持续时间字符串
+///
+/// 支持以下格式：
+/// - `h`: 小时
+/// - `d`: 天
+/// - `m`: 分钟
+/// - `s`: 秒
+/// - 纯数字: 秒
 fn parse_duration(s: &str) -> anyhow::Result<u64> {
     let s = s.trim();
     if s.ends_with('h') {
@@ -279,6 +473,9 @@ fn parse_duration(s: &str) -> anyhow::Result<u64> {
     }
 }
 
+/// 解析键值对字符串
+///
+/// 格式：`key1=value1,key2=value2,...`
 fn parse_kv_pairs(input: Option<&str>) -> Vec<(String, String)> {
     input
         .map(|s| {
@@ -292,6 +489,13 @@ fn parse_kv_pairs(input: Option<&str>) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
+/// 解析字段值字符串
+///
+/// 自动推断值类型：
+/// - 浮点数：包含小数点的数字
+/// - 整数：纯数字
+/// - 布尔：`true` 或 `false`
+/// - 字符串：其他情况
 fn parse_field_values(input: &str) -> Vec<(String, tsdb_server::protocol::FieldValueProto)> {
     input
         .split(',')
@@ -299,6 +503,7 @@ fn parse_field_values(input: &str) -> Vec<(String, tsdb_server::protocol::FieldV
             let mut parts = pair.splitn(2, '=');
             let key = parts.next()?.to_string();
             let val_str = parts.next()?;
+            // 自动推断类型
             let value = if let Ok(f) = val_str.parse::<f64>() {
                 tsdb_server::protocol::FieldValueProto::Float(f)
             } else if let Ok(i) = val_str.parse::<i64>() {
@@ -315,25 +520,32 @@ fn parse_field_values(input: &str) -> Vec<(String, tsdb_server::protocol::FieldV
         .collect()
 }
 
+/// 发送请求并显示响应
+///
+/// 通过 TCP 连接发送请求，并打印服务端响应。
 fn send_request(addr: &str, request: tsdb_server::protocol::Request) -> anyhow::Result<()> {
     use std::io::{Read, Write};
     use tsdb_server::protocol::{encode_request, decode_response};
 
     let mut stream = std::net::TcpStream::connect(addr)?;
 
+    // 编码并发送请求
     let data = encode_request(&request);
     let len = data.len() as u32;
     stream.write_all(&len.to_be_bytes())?;
     stream.write_all(&data)?;
     stream.flush()?;
 
+    // 读取响应长度
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf)?;
     let resp_len = u32::from_be_bytes(len_buf) as usize;
 
+    // 读取响应数据
     let mut resp_data = vec![0u8; resp_len];
     stream.read_exact(&mut resp_data)?;
 
+    // 解码并显示响应
     let response = decode_response(&resp_data)
         .ok_or_else(|| anyhow::anyhow!("failed to decode response"))?;
 
@@ -347,7 +559,9 @@ fn send_request(addr: &str, request: tsdb_server::protocol::Request) -> anyhow::
             }
         }
         tsdb_server::protocol::Response::QueryResult { columns, rows } => {
+            // 显示列名
             println!("{}", columns.join("\t"));
+            // 显示数据行
             for row in rows {
                 let vals: Vec<String> = row.iter().map(|v| format!("{:?}", v)).collect();
                 println!("{}", vals.join("\t"));
