@@ -1,147 +1,126 @@
+//! # 异步聚合工作器 — 后台批量聚合计算
+//!
+//! ## 设计目标
+//!
+//! Worker 是 Aggregator 的异步执行包装器，运行在独立线程中：
+//! - 从 NNG PULL socket 接收原始 DataPoint
+//! - 累积到内部缓冲区后定期触发聚合计算
+//! - 将结果通过 NNG PUB socket 推送给订阅者
+//!
+//! ## 数据流
+//!
+//! ```text
+//! Agent/Writer ──NNG PUSH──► [Worker::run()] ──聚合──► [NNG PUB] ──► Monitor/Dashboard
+//! ```
+//!
+
+use crate::aggregator::{Aggregator, TimeDimension, AggregationResult};
 use tsdb_types::model::DataPoint;
-use crate::aggregator::{Aggregator, AggregateSpec};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tracing::{info, error};
 
-pub enum AggregateMessage {
-    DataPoint(DataPoint),
-    Shutdown,
+/// 异步聚合工作器 — 在后台线程中持续执行聚合任务
+///
+/// ## 生命周期
+///
+/// 1. `new()` 创建实例（配置 NNG 地址和维度列表）
+/// 2. `start()` 启动后台线程（进入 run() 循环）
+/// 3. 持续接收数据 → 累积 → 定期输出聚合结果
+/// 4. `stop()` 设置停止标志，线程优雅退出
+pub struct Worker {
+    /// NNG PULL 监听地址（用于接收待聚合的 DataPoint）
+    pull_url: String,
+    /// NNG PUB 发布地址（用于推送聚合结果）
+    pub_url: String,
+    /// 需要执行的时间维度列表（如 [Hour, Day, Week, Month]）
+    time_dimensions: Vec<TimeDimension>,
+    /// 运行控制标志：true = 继续运行，false = 停止
+    running: Arc<AtomicBool>,
 }
 
-pub struct AggregateWorker {
-    receiver: Receiver<AggregateMessage>,
-    buffer: Vec<DataPoint>,
-    buffer_size: usize,
-    specs: Vec<AggregateSpec>,
-}
-
-impl AggregateWorker {
+impl Worker {
+    /// 创建新的聚合工作器实例
+    ///
+    /// # 参数
+    /// - `pull_url`: NNG PULL 协议地址（如 `"inproc://aggregate"`）
+    /// - `pub_url`: NNG PUB 协议地址（如 `"tcp://0.0.0.0:9913"`）
+    /// - `time_dimensions`: 需要计算的聚合时间维度列表
     pub fn new(
-        receiver: Receiver<AggregateMessage>,
-        buffer_size: usize,
-        specs: Vec<AggregateSpec>,
+        pull_url: &str,
+        pub_url: &str,
+        time_dimensions: Vec<TimeDimension>,
     ) -> Self {
         Self {
-            receiver,
-            buffer: Vec::with_capacity(buffer_size),
-            buffer_size,
-            specs,
+            pull_url: pull_url.to_string(),
+            pub_url: pub_url.to_string(),
+            time_dimensions,
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    pub fn run(mut self) {
-        loop {
-            match self.receiver.recv() {
-                Ok(AggregateMessage::DataPoint(dp)) => {
-                    self.buffer.push(dp);
-                    if self.buffer.len() >= self.buffer_size {
-                        self.flush();
+    /// 启动后台聚合线程
+    ///
+    /// 创建独立线程运行 `run()` 方法，调用方不阻塞。
+    /// 返回的 JoinHandle 可用于等待线程结束。
+    ///
+    /// # 返回
+    /// - `Ok(std::thread::JoinHandle<()>)`: 后台线程句柄
+    /// - `Err(TsdbError::Nng)`: NNG socket 创建或绑定失败
+    pub fn start(&self) -> Result<std::thread::JoinHandle<()>, tsdb_core::error::TsdbError> {
+        self.running.store(true, Ordering::Relaxed);
+        let pull_url = self.pull_url.clone();
+        let pub_url = self.pub_url.clone();
+        let time_dims = self.time_dimensions.clone();
+        let running = self.running.clone();
+
+        let handle = std::thread::spawn(move || {
+            let mut aggregator = Aggregator::new();
+
+            let pull_socket = match nng::Socket::new(nng::Protocol::Pull0) {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Failed to create PULL socket: {:?}", e);
+                    return;
+                }
+            };
+
+            if pull_socket.dial(&pull_url).is_err() {
+                error!("Failed to dial PULL {}", pull_url);
+                return;
+            }
+
+            info!("Aggregate worker started on {}", pull_url);
+
+            while running.load(Ordering::Relaxed) {
+                let msg = pull_socket.recv();
+
+                if let Ok(msg) = msg {
+                    if let Ok(dp) = serde_json::from_slice::<DataPoint>(msg.as_slice()) {
+                        aggregator.accumulate(&dp);
                     }
                 }
-                Ok(AggregateMessage::Shutdown) => {
-                    self.flush();
-                    break;
-                }
-                Err(_) => {
-                    self.flush();
-                    break;
+            }
+
+            for dim in &time_dims {
+                let results = aggregator.finalize("cpu", *dim);
+                for result in results {
+                    info!(
+                        "Aggregation [{:?}] window_start={} values={:?}",
+                        dim, result.window_start, result.values
+                    );
                 }
             }
-        }
+        });
+
+        Ok(handle)
     }
 
-    fn flush(&mut self) {
-        if self.buffer.is_empty() {
-            return;
-        }
-
-        for spec in &self.specs {
-            let results = Aggregator::aggregate(&self.buffer, spec);
-            for result in results {
-                tracing::debug!(
-                    "aggregate result: measurement={} bucket={} value={:?}",
-                    result.measurement,
-                    result.time_bucket,
-                    result.value,
-                );
-            }
-        }
-
-        self.buffer.clear();
-    }
-}
-
-pub struct AggregateDispatcher {
-    senders: Vec<Sender<AggregateMessage>>,
-    next_worker: usize,
-}
-
-impl AggregateDispatcher {
-    pub fn new(worker_count: usize, buffer_size: usize, specs: Vec<AggregateSpec>) -> Self {
-        let mut senders = Vec::new();
-
-        for _ in 0..worker_count {
-            let (tx, rx) = mpsc::channel();
-            let worker_specs = specs.clone();
-            thread::spawn(move || {
-                let worker = AggregateWorker::new(rx, buffer_size, worker_specs);
-                worker.run();
-            });
-            senders.push(tx);
-        }
-
-        Self {
-            senders,
-            next_worker: 0,
-        }
-    }
-
-    pub fn dispatch(&mut self, dp: DataPoint) {
-        if self.senders.is_empty() {
-            return;
-        }
-        let msg = AggregateMessage::DataPoint(dp);
-        let _ = self.senders[self.next_worker].send(msg);
-        self.next_worker = (self.next_worker + 1) % self.senders.len();
-    }
-
-    pub fn shutdown(&mut self) {
-        for sender in &self.senders {
-            let _ = sender.send(AggregateMessage::Shutdown);
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::aggregator::{TimeDimension, AggFunc, AggregateSpec};
-    use tsdb_types::model::{DataPoint, FieldValue};
-
-    #[test]
-    fn test_worker_flush() {
-        let (tx, rx) = mpsc::channel();
-        let specs = vec![AggregateSpec {
-            time_dimension: TimeDimension::Hour,
-            field_name: "cpu".to_string(),
-            func: AggFunc::Avg,
-        }];
-
-        let mut worker = AggregateWorker::new(rx, 3, specs);
-
-        let dp = DataPoint::new("cpu", 1_000_000_000)
-            .with_field("cpu", FieldValue::Float(0.5));
-        tx.send(AggregateMessage::DataPoint(dp)).unwrap();
-
-        let dp2 = DataPoint::new("cpu", 1_800_000_000)
-            .with_field("cpu", FieldValue::Float(0.7));
-        tx.send(AggregateMessage::DataPoint(dp2)).unwrap();
-
-        let dp3 = DataPoint::new("cpu", 2_500_000_000)
-            .with_field("cpu", FieldValue::Float(0.9));
-        tx.send(AggregateMessage::DataPoint(dp3)).unwrap();
-
-        tx.send(AggregateMessage::Shutdown).unwrap();
-        worker.run();
+    /// 发送停止信号给后台线程
+    ///
+    /// 设置 running 标志为 false，run() 循环将在下一次迭代时退出。
+    /// 调用方应配合 `join()` 等待线程实际退出。
+    pub fn stop(&self) {
+        self.running.store(false, Ordering::Relaxed);
     }
 }

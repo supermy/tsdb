@@ -49,112 +49,30 @@ struct Cli {
     /// 服务端端口号
     #[arg(long, default_value_t = 7878)]
     port: u16,
+    /// 目标数据库名称（默认 "default"）
+    #[arg(long, default_value = "")]
+    database: String,
 }
 
 /// 子命令枚举
-///
-/// 定义所有支持的命令行操作。
 #[derive(Subcommand)]
 enum Commands {
-    /// 启动 TSDB 服务端
-    ///
-    /// 启动一个完整的 TSDB 服务实例，包括：
-    /// - TCP 服务（MessagePack 协议）
-    /// - HTTP API 服务
-    /// - 存储引擎
-    Start {
-        /// 配置文件路径
-        #[arg(long, default_value = "config.ini")]
-        config: PathBuf,
-    },
-
-    /// 执行 SQL 查询
-    ///
-    /// 向服务端发送 SQL 查询语句并显示结果。
-    ///
-    /// # 示例
-    ///
-    /// ```bash
-    /// tsdb-cli query "SELECT * FROM cpu WHERE host='server01' LIMIT 10"
-    /// ```
-    Query {
-        /// SQL 查询语句
-        sql: String,
-    },
-
-    /// 写入数据点
-    ///
-    /// 向服务端写入单个数据点。
-    ///
-    /// # 示例
-    ///
-    /// ```bash
-    /// tsdb-cli write --measurement cpu --tags host=server01,region=us-west --fields usage=0.75,system=0.25
-    /// ```
+    Start { #[arg(long, default_value = "config.ini")] config: PathBuf },
+    Query { sql: String },
     Write {
-        /// 指标名称
-        #[arg(long)]
-        measurement: String,
-        /// 标签列表（格式：key1=value1,key2=value2）
-        #[arg(long)]
-        tags: Option<String>,
-        /// 字段列表（格式：key1=value1,key2=value2）
-        #[arg(long)]
-        fields: String,
-        /// 时间戳（微秒，0 表示当前时间）
-        #[arg(long, default_value_t = 0)]
-        timestamp: i64,
+        #[arg(long)] measurement: String,
+        #[arg(long)] tags: Option<String>,
+        #[arg(long)] fields: String,
+        #[arg(long, default_value_t = 0)] timestamp: i64,
     },
-
-    /// 健康检查
-    ///
-    /// 向服务端发送 Ping 请求，检查服务是否正常运行。
     Ping,
-
-    /// 列出数据库
-    ///
-    /// 显示服务端所有可用的数据库。
     List,
-
-    /// 加载 TSBS 基准测试数据
-    ///
-    /// 从 JSON 文件批量加载 TSBS 格式的数据。
-    /// 用于性能测试和数据导入。
-    ///
-    /// # 示例
-    ///
-    /// ```bash
-    /// tsdb-cli load-tsbs --input data.json --batch-size 1000
-    /// ```
-    LoadTsbs {
-        /// 输入文件路径（JSON 格式，每行一个数据点）
-        #[arg(long)]
-        input: PathBuf,
-        /// 批量写入大小
-        #[arg(long, default_value_t = 1000)]
-        batch_size: usize,
-    },
-
-    /// 生成 TSBS 合成数据
-    ///
-    /// 生成模拟的 DevOps 监控数据，用于测试和基准测试。
-    ///
-    /// # 示例
-    ///
-    /// ```bash
-    /// tsdb-cli generate-tsbs --scale 100 --duration 24h --output data.json
-    /// ```
-    GenerateTsbs {
-        /// 设备数量（每个设备生成一条时间序列）
-        #[arg(long, default_value_t = 100)]
-        scale: usize,
-        /// 数据持续时间（支持 h/d/m/s 后缀）
-        #[arg(long, default_value = "24h")]
-        duration: String,
-        /// 输出文件路径
-        #[arg(long, default_value = "tsbs_data.json")]
-        output: PathBuf,
-    },
+    /// 创建新数据库
+    CreateDb { name: String },
+    /// 删除数据库
+    DropDb { name: String },
+    LoadTsbs { #[arg(long)] input: PathBuf, #[arg(long, default_value_t = 1000)] batch_size: usize },
+    GenerateTsbs { #[arg(long, default_value_t = 100)] scale: usize, #[arg(long, default_value = "24h")] duration: String, #[arg(long, default_value = "tsbs_data.json")] output: PathBuf },
 }
 
 /// 程序入口函数
@@ -164,57 +82,46 @@ fn main() -> anyhow::Result<()> {
 
     // 根据子命令执行相应操作
     match cli.command {
-        // 启动服务端
         Commands::Start { config } => {
-            // 加载配置文件
             let config = TsdbConfig::load_or_default(&config);
-            // 创建并启动服务端
             let mut server = tsdb_server::TsdbServer::new(config);
             server.start()?;
         }
-        // 执行查询
         Commands::Query { sql } => {
-            println!("Query: {}", sql);
             let addr = format!("{}:{}", cli.host, cli.port);
-            send_request(&addr, tsdb_server::protocol::Request::Query { sql })?;
+            send_request(&addr, tsdb_server::protocol::Request::Query { database: cli.database.clone(), sql })?;
         }
-        // 写入数据
         Commands::Write { measurement, tags, fields, timestamp } => {
-            // 解析标签和字段
             let tag_pairs = parse_kv_pairs(tags.as_deref());
             let field_pairs = parse_field_values(&fields);
-            // 如果未指定时间戳，使用当前时间
-            let ts = if timestamp == 0 {
-                chrono::Utc::now().timestamp_micros()
-            } else {
-                timestamp
-            };
+            let ts = if timestamp == 0 { chrono::Utc::now().timestamp_micros() } else { timestamp };
             let addr = format!("{}:{}", cli.host, cli.port);
             send_request(&addr, tsdb_server::protocol::Request::Write {
+                database: cli.database.clone(),
                 measurement,
                 tags: tag_pairs,
                 fields: field_pairs,
                 timestamp: ts,
             })?;
         }
-        // 健康检查
         Commands::Ping => {
             let addr = format!("{}:{}", cli.host, cli.port);
             send_request(&addr, tsdb_server::protocol::Request::Ping)?;
         }
-        // 列出数据库
         Commands::List => {
             let addr = format!("{}:{}", cli.host, cli.port);
             send_request(&addr, tsdb_server::protocol::Request::ListDatabases)?;
         }
-        // 加载 TSBS 数据
-        Commands::LoadTsbs { input, batch_size } => {
-            load_tsbs_data(&input, batch_size)?;
+        Commands::CreateDb { name } => {
+            let addr = format!("{}:{}", cli.host, cli.port);
+            send_request(&addr, tsdb_server::protocol::Request::CreateDatabase { name })?;
         }
-        // 生成 TSBS 数据
-        Commands::GenerateTsbs { scale, duration, output } => {
-            generate_tsbs_data(scale, &duration, &output)?;
+        Commands::DropDb { name } => {
+            let addr = format!("{}:{}", cli.host, cli.port);
+            send_request(&addr, tsdb_server::protocol::Request::DropDatabase { name })?;
         }
+        Commands::LoadTsbs { input, batch_size } => { load_tsbs_data(&input, batch_size)?; }
+        Commands::GenerateTsbs { scale, duration, output } => { generate_tsbs_data(scale, &duration, &output)?; }
     }
 
     Ok(())
@@ -307,7 +214,7 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
         }
 
         // 添加到批次
-        batch.push(Request::Write { measurement, tags, fields, timestamp });
+        batch.push(Request::Write { database: String::new(), measurement, tags, fields, timestamp });
 
         // 批量发送
         if batch.len() >= batch_size {

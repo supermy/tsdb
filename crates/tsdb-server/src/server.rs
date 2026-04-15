@@ -1,39 +1,45 @@
+//! # TSDB 服务器核心 — TCP 二进制协议服务
+//!
+//! TsdbServer 是 TSDB 的主入口点，提供基于 TCP 的自定义二进制协议服务，
+//! 支持多业务数据库隔离。
+
 use crate::protocol::{Request, Response, decode_request, encode_response};
 use tsdb_core::storage::StorageEngine;
 use tsdb_core::storage::cf_manager::CfConfig;
+use tsdb_core::storage::multi_db::MultiDbManager;
 use tsdb_core::error::{TsdbError, Result};
 use tsdb_config::TsdbConfig;
 use tsdb_query::QueryEngine;
 use tsdb_types::model::{DataPoint, FieldValue};
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::io::{Read, Write};
 use tracing::{info, error};
 
+/// TSDB 服务器实例 — 管理多业务数据库连接、处理客户端请求
 pub struct TsdbServer {
     config: TsdbConfig,
-    databases: HashMap<String, Arc<StorageEngine>>,
+    db_manager: Arc<MultiDbManager>,
     query_engine: QueryEngine,
 }
 
 impl TsdbServer {
     pub fn new(config: TsdbConfig) -> Self {
-        Self {
-            config,
-            databases: HashMap::new(),
-            query_engine: QueryEngine::new(),
-        }
+        let cf_config = CfConfig {
+            hot_days: config.storage.hot_days,
+            retention_days: config.storage.retention_days,
+        };
+        let db_manager = Arc::new(MultiDbManager::new(config.storage.data_dir.clone(), cf_config));
+        Self { config, db_manager, query_engine: QueryEngine::new() }
     }
 
     pub fn start(&mut self) -> Result<()> {
         let addr = format!("{}:{}", self.config.server.host, self.config.server.port);
         info!("TSDB server starting on {}", addr);
 
-        self.ensure_default_database()?;
+        self.db_manager.ensure_default()?;
 
         let http_port = self.config.server.port + 1;
-        let http_addr = format!("{}:{}", self.config.server.host, http_port);
-        info!("HTTP API available at http://{}/api/v1/", http_addr);
+        info!("HTTP API available at http://{}:{}/api/v1/", self.config.server.host, http_port);
 
         let listener = std::net::TcpListener::bind(&addr)
             .map_err(|e| TsdbError::Network(format!("failed to bind {}: {}", addr, e)))?;
@@ -47,12 +53,9 @@ impl TsdbServer {
                         error!("connection error: {}", e);
                     }
                 }
-                Err(e) => {
-                    error!("accept error: {}", e);
-                }
+                Err(e) => { error!("accept error: {}", e); }
             }
         }
-
         Ok(())
     }
 
@@ -60,7 +63,7 @@ impl TsdbServer {
         let http_port = self.config.server.port + 1;
         let http_addr = format!("{}:{}", self.config.server.host, http_port);
 
-        self.ensure_default_database()?;
+        self.db_manager.ensure_default()?;
 
         let tcp_addr = format!("{}:{}", self.config.server.host, self.config.server.port);
         let listener = std::net::TcpListener::bind(&tcp_addr)
@@ -69,13 +72,12 @@ impl TsdbServer {
         info!("TSDB server listening on {}", tcp_addr);
         info!("HTTP API at http://{}/api/v1/", http_addr);
 
-        let db = self.databases.get("default").cloned();
-        if let Some(db) = db {
-            let query_engine = QueryEngine::new();
-            std::thread::spawn(move || {
-                crate::http_api::start_http_server(&http_addr, db, query_engine);
-            });
-        }
+        let db = self.db_manager.get_database("default")?;
+        let query_engine = QueryEngine::new();
+        let db_mgr = Arc::clone(&self.db_manager);
+        std::thread::spawn(move || {
+            crate::http_api::start_http_server(&http_addr, db, query_engine, db_mgr);
+        });
 
         for stream in listener.incoming() {
             match stream {
@@ -84,12 +86,9 @@ impl TsdbServer {
                         error!("connection error: {}", e);
                     }
                 }
-                Err(e) => {
-                    error!("accept error: {}", e);
-                }
+                Err(e) => { error!("accept error: {}", e); }
             }
         }
-
         Ok(())
     }
 
@@ -111,7 +110,6 @@ impl TsdbServer {
         stream.write_all(&resp_len.to_be_bytes())?;
         stream.write_all(&resp_data)?;
         stream.flush()?;
-
         Ok(())
     }
 
@@ -119,70 +117,58 @@ impl TsdbServer {
         match request {
             Request::Ping => Response::Pong,
 
-            Request::Write { measurement, tags, fields, timestamp } => {
-                let db = self.databases.get("default");
-                if let Some(db) = db {
-                    let mut dp = DataPoint::new(measurement, timestamp);
-                    for (k, v) in tags {
-                        dp.tags.insert(k, v);
-                    }
-                    for (k, v) in fields {
-                        dp.fields.insert(k, v.into());
-                    }
-                    match db.write(&dp) {
-                        Ok(()) => Response::Ok,
-                        Err(e) => Response::Error(e.to_string()),
-                    }
-                } else {
-                    Response::Error("no default database".into())
-                }
-            }
-
-            Request::Query { sql } => {
-                let db = self.databases.get("default");
-                if let Some(db) = db {
-                    match self.query_engine.execute(&sql, db) {
-                        Ok(result) => {
-                            let columns = result.columns;
-                            let rows = result.rows.into_iter()
-                                .map(|row| row.into_iter().map(|v| v.into()).collect())
-                                .collect();
-                            Response::QueryResult { columns, rows }
+            Request::Write { database, measurement, tags, fields, timestamp } => {
+                let db_name = if database.is_empty() { "default" } else { &database };
+                match self.db_manager.get_database(db_name) {
+                    Ok(db) => {
+                        let mut dp = DataPoint::new(measurement, timestamp);
+                        for (k, v) in tags { dp.tags.insert(k, v); }
+                        for (k, v) in fields { dp.fields.insert(k, v.into()); }
+                        match db.write(&dp) {
+                            Ok(()) => Response::Ok,
+                            Err(e) => Response::Error(e.to_string()),
                         }
-                        Err(e) => Response::Error(e.to_string()),
                     }
-                } else {
-                    Response::Error("no default database".into())
+                    Err(e) => Response::Error(e.to_string()),
                 }
             }
 
-            Request::CreateDatabase { name: _ } => {
-                Response::Error("create database not yet implemented".into())
+            Request::Query { database, sql } => {
+                let db_name = if database.is_empty() { "default" } else { &database };
+                match self.db_manager.get_database(db_name) {
+                    Ok(db) => {
+                        match self.query_engine.execute(&sql, &db) {
+                            Ok(result) => {
+                                let columns = result.columns;
+                                let rows = result.rows.into_iter()
+                                    .map(|row| row.into_iter().map(|v| v.into()).collect())
+                                    .collect();
+                                Response::QueryResult { columns, rows }
+                            }
+                            Err(e) => Response::Error(e.to_string()),
+                        }
+                    }
+                    Err(e) => Response::Error(e.to_string()),
+                }
+            }
+
+            Request::CreateDatabase { name } => {
+                match self.db_manager.create_database(&name) {
+                    Ok(_) => Response::Ok,
+                    Err(e) => Response::Error(e.to_string()),
+                }
             }
 
             Request::ListDatabases => {
-                Response::Databases(self.databases.keys().cloned().collect())
+                Response::Databases(self.db_manager.list_databases())
             }
 
-            Request::DropDatabase { name: _ } => {
-                Response::Error("drop database not yet implemented".into())
+            Request::DropDatabase { name } => {
+                match self.db_manager.drop_database(&name) {
+                    Ok(_) => Response::Ok,
+                    Err(e) => Response::Error(e.to_string()),
+                }
             }
         }
-    }
-
-    fn ensure_default_database(&mut self) -> Result<()> {
-        let data_dir = self.config.storage.data_dir.join("default");
-        std::fs::create_dir_all(&data_dir)?;
-
-        let cf_config = CfConfig {
-            hot_days: self.config.storage.hot_days,
-            retention_days: self.config.storage.retention_days,
-        };
-
-        let engine = StorageEngine::open(&data_dir, cf_config)?;
-        self.databases.insert("default".to_string(), Arc::new(engine));
-
-        info!("default database opened at {:?}", data_dir);
-        Ok(())
     }
 }

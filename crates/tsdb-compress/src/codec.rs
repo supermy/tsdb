@@ -1,3 +1,33 @@
+//! # 块编解码器（Block Codec）— 数据块压缩/解压
+//!
+//! ## 架构设计
+//!
+//! BlockCodec 是 TSDB 压缩子系统的顶层调度器，将一个 **DataBlock**（原始数据块）
+//! 按字段类型分派到最合适的压缩算法：
+//!
+//! ```text
+//! DataBlock (原始)
+//! ├── timestamps ──────► DeltaEncoder (Delta-of-Delta + ZigZag + Varint)
+//! ├── float 字段   ────► GorillaEncoder (XOR 浮点压缩)
+//! ├── int 字段     ────► Big-Endian 原始存储 (8B/值)
+//! ├── string 字段  ────► DictionaryEncoder (字典编码)
+//! └── bool 字段    ────► 位打包 (8 值/字节)
+//!       │
+//!       ▼
+//! CompressedBlock (压缩后，可序列化持久化)
+//! ```
+//!
+//! ## 类型分派策略
+//!
+//! | 字段类型 | 压缩算法 | 典型压缩比 |
+//! |---------|----------|-----------|
+//! | i64 时间戳 | Delta-of-Delta | ~10:1 |
+//! | f64 测量值 | Gorilla XOR | ~5-15:1 |
+//! | i64 计数器 | 原始存储 | 1:1 (已紧凑) |
+//! | String 标签 | Dictionary | ~3-10:1 |
+//! | Boolean 标志 | Bit-packing | 8:1 |
+//!
+
 use crate::delta::{DeltaEncoder, DeltaDecoder};
 use crate::gorilla::{GorillaEncoder, GorillaDecoder};
 use crate::dictionary::{DictionaryEncoder, DictionaryDecoder};
@@ -5,30 +35,75 @@ use crate::error::{CompressError, CompressResult};
 use tsdb_types::model::FieldValue;
 use std::collections::HashMap;
 
+/// 块编解码器 trait — 定义压缩/解压的统一接口
+///
+/// 实现此 trait 可支持不同的压缩策略（如未来可加入 ZSTD、LZ4 等）。
 pub trait Codec {
+    /// 将原始数据块压缩为 CompressedBlock
     fn compress_block(&self, block: &DataBlock) -> CompressResult<CompressedBlock>;
+    /// 将 CompressedBlock 解压还原为原始 DataBlock
     fn decompress_block(&self, compressed: &CompressedBlock) -> CompressResult<DataBlock>;
 }
 
+/// 原始数据块 — 未压缩的时间序列数据集合
+///
+/// 包含一个时间戳向量和多个命名字段向量，每个字段向量内的值类型一致。
 #[derive(Debug, Clone)]
 pub struct DataBlock {
+    /// 微秒级时间戳向量（单调递增）
     pub timestamps: Vec<i64>,
+    /// 字段名 → 字段值向量的映射
     pub fields: HashMap<String, Vec<FieldValue>>,
 }
 
+/// 压缩后的数据块 — 各字段独立压缩的二进制数据
+///
+/// 实现了 Serialize/Deserialize 以支持通过 bincode 序列化到 RocksDB。
+/// 各字段按类型分别存储在对应的 HashMap 中。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CompressedBlock {
+    /// Delta 编码后的时间戳二进制数据
     pub timestamps: Vec<u8>,
+    /// float 字段名 → Gorilla 编码后的二进制数据
     pub float_fields: HashMap<String, Vec<u8>>,
+    /// int/bool 字段名 → 原始或位打包后的二进制数据
     pub int_fields: HashMap<String, Vec<u8>>,
+    /// string 字段名 → 字典 ID 序列的二进制数据
     pub string_fields: HashMap<String, Vec<u8>>,
+    /// string 字段名 → 字典条目的二进制数据
     pub dictionaries: HashMap<String, Vec<u8>>,
+    /// 数据行数（用于解压时预分配空间）
     pub row_count: usize,
 }
 
+/// 默认块编解码器实现 — 使用 TSDB 全套压缩算法组合
+///
+/// ## compress_block 流程
+///
+/// 1. 时间戳 → DeltaEncoder（Delta-of-Delta + ZigZag + Varint）
+/// 2. 遍历每个字段，根据首值类型选择编码器：
+///    - Float → GorillaEncoder（XOR 压缩）
+///    - Integer → 原始 Big-Endian 存储
+///    - String → DictionaryEncoder（字典编码）+ ID 序列
+///    - Boolean → 位打包（每字节存储 8 个布尔值）
+///
+/// ## decompress_block 流程（压缩的逆过程）
+///
+/// 1. DeltaDecoder 还原时间戳向量
+/// 2. GorillaDecoder 还原各 float 字段
+/// 3. 按 8 字节/chunk 还原 int 字段
+/// 4. DictionaryDecoder + ID 序列还原 string 字段
 pub struct BlockCodec;
 
 impl Codec for BlockCodec {
+    /// 将原始数据块压缩为 CompressedBlock
+    ///
+    /// # 参数
+    /// - `block`: 待压缩的原始数据块
+    ///
+    /// # 返回
+    /// - `Ok(CompressedBlock)`: 压缩后的数据块（可直接序列化）
+    /// - `Err(CompressError)`: 编码过程中发生错误
     fn compress_block(&self, block: &DataBlock) -> CompressResult<CompressedBlock> {
         let mut ts_encoder = DeltaEncoder::new();
         for &ts in &block.timestamps {
@@ -106,6 +181,14 @@ impl Codec for BlockCodec {
         })
     }
 
+    /// 将 CompressedBlock 解压还原为原始 DataBlock
+    ///
+    /// # 参数
+    /// - `compressed`: 已压缩的数据块
+    ///
+    /// # 返回
+    /// - `Ok(DataBlock)`: 还原后的原始数据块
+    /// - `Err(CompressError)`: 解码过程中发生错误（如格式损坏）
     fn decompress_block(&self, compressed: &CompressedBlock) -> CompressResult<DataBlock> {
         let ts_decoder = DeltaDecoder::new(compressed.timestamps.clone());
         let timestamps = ts_decoder.decode_all()?;

@@ -1,242 +1,271 @@
-use crate::parser::SqlParser;
-use crate::plan::{PlanNode, QueryPlanner, AggFunc, AggExpr};
-use tsdb_types::model::{DataPoint, FieldValue};
+//! # 查询执行引擎 — SQL 查询的运行时执行器
+//!
+//! ## 架构设计
+//!
+//! QueryEngine 是 TSDB 的查询入口，负责：
+//! 1. **解析**：SQL 字符串 → ParsedQuery（委托给 SqlParser）
+//! 2. **规划**：ParsedQuery → ExecutionPlan（委托给 QueryPlanner）
+//! 3. **执行**：ExecutionPlan → QueryResult（直接操作 StorageEngine）
+//!
+//! ```text
+//! SQL 字符串
+//!     │
+//!     ▼ SqlParser::parse()
+//! ParsedQuery
+//!     │
+//!     ▼ QueryPlanner::plan()
+//! ExecutionPlan { scan_type, filters, aggregations }
+//!     │
+//!     ▼ execute()
+//! QueryResult { columns: ["time", "usage"], rows: [[...], [...]] }
+//! ```
+//!
+
+use crate::parser::{SqlParser, ParsedQuery, SelectField, AggFunc};
+use crate::plan::{QueryPlanner, ExecutionPlan};
 use tsdb_core::storage::StorageEngine;
-use std::collections::HashMap;
+use tsdb_types::model::{FieldValue, DataPoint};
+use thiserror::Error;
 
-pub struct QueryEngine {
-    parser: SqlParser,
-}
-
+/// 查询结果集 — 执行完成后返回的数据表格
 #[derive(Debug)]
 pub struct QueryResult {
+    /// 列名列表（如 `["time", "host", "cpu_usage"]`）
     pub columns: Vec<String>,
+    /// 行数据列表，每行为一个 FieldValue 向量
     pub rows: Vec<Vec<FieldValue>>,
 }
 
-impl QueryEngine {
-    pub fn new() -> Self {
-        Self {
-            parser: SqlParser::new(),
-        }
-    }
-
-    pub fn execute(&self, sql: &str, storage: &StorageEngine) -> Result<QueryResult, QueryError> {
-        let parsed = self.parser.parse(sql)
-            .map_err(|e| QueryError::Parse(e.to_string()))?;
-
-        let plan = QueryPlanner::plan(&parsed);
-        self.execute_plan(&plan, storage)
-    }
-
-    fn execute_plan(&self, plan: &PlanNode, storage: &StorageEngine) -> Result<QueryResult, QueryError> {
-        match plan {
-            PlanNode::Scan { measurement, time_range, tag_filters } => {
-                let (start, end) = time_range.unwrap_or((
-                    0,
-                    chrono::Utc::now().timestamp_micros(),
-                ));
-
-                let tags: std::collections::BTreeMap<String, String> = tag_filters.iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
-
-                let data_points = storage.read_range(measurement, &tags, start, end)
-                    .map_err(|e| QueryError::Execution(e.to_string()))?;
-
-                if data_points.is_empty() {
-                    return Ok(QueryResult {
-                        columns: vec!["time".to_string()],
-                        rows: vec![],
-                    });
-                }
-
-                let mut field_names: Vec<String> = data_points.first()
-                    .map(|dp| dp.fields.keys().cloned().collect())
-                    .unwrap_or_default();
-                field_names.sort();
-                let mut columns = vec!["time".to_string(), "measurement".to_string()];
-                columns.extend(field_names.clone());
-
-                let rows: Vec<Vec<FieldValue>> = data_points.into_iter().map(|dp| {
-                    let mut row = vec![
-                        FieldValue::Integer(dp.timestamp),
-                        FieldValue::String(dp.measurement),
-                    ];
-                    for name in &field_names {
-                        row.push(dp.fields.get(name).cloned().unwrap_or(FieldValue::String(String::new())));
-                    }
-                    row
-                }).collect();
-
-                Ok(QueryResult { columns, rows })
-            }
-
-            PlanNode::Aggregate { input, aggs, group_by } => {
-                let input_result = self.execute_plan(input, storage)?;
-
-                let mut result_columns = group_by.clone();
-                for agg in aggs {
-                    let name = agg.alias.clone().unwrap_or_else(|| {
-                        format!("{:?}({})", agg.func, agg.field)
-                    });
-                    result_columns.push(name);
-                }
-
-                let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
-                for (row_idx, row) in input_result.rows.iter().enumerate() {
-                    let key: String = group_by.iter()
-                        .filter_map(|name| {
-                            input_result.columns.iter().position(|c| c == name)
-                                .map(|idx| format!("{:?}", row[idx]))
-                        })
-                        .collect::<Vec<_>>()
-                        .join("|");
-                    groups.entry(key).or_default().push(row_idx);
-                }
-
-                let mut result_rows = Vec::new();
-                for (key_str, row_indices) in groups {
-                    let mut result_row = Vec::new();
-                    if let Some(first_idx) = row_indices.first() {
-                        for name in group_by {
-                            if let Some(col_idx) = input_result.columns.iter().position(|c| c == name) {
-                                result_row.push(input_result.rows[*first_idx][col_idx].clone());
-                            }
-                        }
-                    }
-
-                    for agg in aggs {
-                        let col_idx = input_result.columns.iter().position(|c| c == &agg.field);
-                        let values: Vec<&FieldValue> = row_indices.iter()
-                            .filter_map(|&idx| col_idx.map(|ci| &input_result.rows[idx][ci]))
-                            .collect();
-
-                        let agg_value = compute_aggregate(agg.func, &values);
-                        result_row.push(agg_value);
-                    }
-                    result_rows.push(result_row);
-                }
-
-                Ok(QueryResult {
-                    columns: result_columns,
-                    rows: result_rows,
-                })
-            }
-
-            PlanNode::Limit { input, count } => {
-                let mut result = self.execute_plan(input, storage)?;
-                result.rows.truncate(*count);
-                Ok(result)
-            }
-
-            PlanNode::Sort { input, field, desc } => {
-                let mut result = self.execute_plan(input, storage)?;
-                let col_idx = result.columns.iter().position(|c| c == field);
-                if let Some(idx) = col_idx {
-                    result.rows.sort_by(|a, b| {
-                        let cmp = compare_field_values(&a[idx], &b[idx]);
-                        if *desc { cmp.reverse() } else { cmp }
-                    });
-                }
-                Ok(result)
-            }
-
-            PlanNode::Project { input, fields } => {
-                let input_result = self.execute_plan(input, storage)?;
-                let indices: Vec<usize> = fields.iter()
-                    .filter_map(|f| input_result.columns.iter().position(|c| c == f))
-                    .collect();
-
-                let columns: Vec<String> = indices.iter()
-                    .map(|&i| input_result.columns[i].clone())
-                    .collect();
-
-                let rows: Vec<Vec<FieldValue>> = input_result.rows.into_iter()
-                    .map(|row| indices.iter().map(|&i| row[i].clone()).collect())
-                    .collect();
-
-                Ok(QueryResult { columns, rows })
-            }
-
-            PlanNode::Filter { input, predicate } => {
-                let input_result = self.execute_plan(input, storage)?;
-                let col_idx = input_result.columns.iter().position(|c| c == &predicate.field);
-                let rows: Vec<Vec<FieldValue>> = if let Some(idx) = col_idx {
-                    input_result.rows.into_iter()
-                        .filter(|row| apply_filter(&row[idx], predicate))
-                        .collect()
-                } else {
-                    input_result.rows
-                };
-                Ok(QueryResult {
-                    columns: input_result.columns,
-                    rows,
-                })
-            }
-        }
-    }
-}
-
-fn compute_aggregate(func: AggFunc, values: &[&FieldValue]) -> FieldValue {
-    match func {
-        AggFunc::Count => FieldValue::Integer(values.len() as i64),
-        AggFunc::Sum => {
-            let sum: f64 = values.iter().filter_map(|v| v.as_f64()).sum();
-            FieldValue::Float(sum)
-        }
-        AggFunc::Avg => {
-            let sum: f64 = values.iter().filter_map(|v| v.as_f64()).sum();
-            let count = values.iter().filter(|v| v.as_f64().is_some()).count();
-            if count > 0 {
-                FieldValue::Float(sum / count as f64)
-            } else {
-                FieldValue::Float(0.0)
-            }
-        }
-        AggFunc::Min => {
-            let min = values.iter()
-                .filter_map(|v| v.as_f64())
-                .fold(f64::INFINITY, f64::min);
-            FieldValue::Float(min)
-        }
-        AggFunc::Max => {
-            let max = values.iter()
-                .filter_map(|v| v.as_f64())
-                .fold(f64::NEG_INFINITY, f64::max);
-            FieldValue::Float(max)
-        }
-        AggFunc::First => values.first().cloned().cloned().unwrap_or(FieldValue::Integer(0)),
-        AggFunc::Last => values.last().cloned().cloned().unwrap_or(FieldValue::Integer(0)),
-    }
-}
-
-fn compare_field_values(a: &FieldValue, b: &FieldValue) -> std::cmp::Ordering {
-    match (a.as_f64(), b.as_f64()) {
-        (Some(va), Some(vb)) => va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal),
-        _ => std::cmp::Ordering::Equal,
-    }
-}
-
-fn apply_filter(value: &FieldValue, predicate: &crate::plan::FilterPredicate) -> bool {
-    match predicate.op {
-        crate::plan::FilterOp::Eq => {
-            match (&value, &predicate.value) {
-                (FieldValue::Float(a), FieldValue::Float(b)) => (a - b).abs() < f64::EPSILON,
-                (FieldValue::Integer(a), FieldValue::Integer(b)) => a == b,
-                (FieldValue::String(a), FieldValue::String(b)) => a == b,
-                (FieldValue::Boolean(a), FieldValue::Boolean(b)) => a == b,
-                _ => true,
-            }
-        }
-        _ => true,
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
+/// 查询引擎错误类型
+#[derive(Error, Debug)]
 pub enum QueryError {
     #[error("parse error: {0}")]
     Parse(String),
     #[error("execution error: {0}")]
     Execution(String),
+}
+
+/// TSDB 查询引擎 — 解析 + 规划 + 执行的统一入口
+///
+/// 封装了完整的查询生命周期管理：
+/// - 创建后即可反复调用 `execute()` 处理不同 SQL
+/// - 内部持有 SqlParser 和 QueryPlanner 实例，避免重复创建开销
+pub struct QueryEngine {
+    /// SQL 解析器实例
+    parser: SqlParser,
+    /// 查询规划器实例
+    planner: QueryPlanner,
+}
+
+impl QueryEngine {
+    /// 创建新的查询引擎实例
+    ///
+    /// 内部初始化 SqlParser 和 QueryPlanner。
+    pub fn new() -> Self {
+        Self {
+            parser: SqlParser::new(),
+            planner: QueryPlanner::new(),
+        }
+    }
+
+    /// 执行 SQL 查询并返回结果集
+    ///
+    /// 三阶段流水线：
+    /// 1. **解析**：将 SQL 字符串转换为 ParsedQuery AST
+    /// 2. **规划**：根据查询特征选择最优执行策略（全表扫描 / 索引扫描 / 聚合下推）
+    /// 3. **执行**：调用 StorageEngine API 获取数据并组装结果
+    ///
+    /// # 参数
+    /// - `sql`: 原始 SQL 查询字符串
+    /// - `db`: 存储引擎引用（用于数据读取）
+    ///
+    /// # 返回
+    /// - `Ok(QueryResult)`: 包含列名和数据行的结果集
+    /// - `Err(QueryError)`: 解析、规划或执行阶段的错误
+    pub fn execute(&self, sql: &str, db: &StorageEngine) -> Result<QueryResult, QueryError> {
+        let parsed = self.parser.parse(sql)
+            .map_err(|e| QueryError::Parse(e.to_string()))?;
+
+        let plan = self.planner.plan(&parsed)
+            .map_err(|e| QueryError::Execution(e.to_string()))?;
+
+        match plan.scan_type {
+            crate::plan::ScanType::FullScan => {
+                self.execute_full_scan(&parsed, db)
+            }
+            crate::plan::ScanType::IndexScan => {
+                self.execute_index_scan(&parsed, db)
+            }
+            crate::plan::ScanType::Aggregation => {
+                self.execute_aggregation(&parsed, db)
+            }
+        }
+    }
+
+    /// 执行全表扫描查询（无索引辅助的暴力扫描）
+    ///
+    /// 遍历指定 measurement 下所有时间范围内的数据点，
+    /// 在内存中逐行应用 WHERE 过滤条件。
+    ///
+    /// 适用场景：无可用索引、或需要返回全部字段的 SELECT * 查询。
+    fn execute_full_scan(
+        &self,
+        query: &ParsedQuery,
+        db: &StorageEngine,
+    ) -> Result<QueryResult, QueryError> {
+        let time_range = query.where_clause.as_ref()
+            .and_then(|w| w.time_range);
+
+        let start = time_range.map(|(s, _)| s).unwrap_or(0);
+        let end = time_range.map(|(_, e)| e).unwrap_or(i64::MAX);
+
+        let data_points = db.read_range(&query.measurement, &tsdb_types::model::Tags::new(), start, end)
+            .map_err(|e| QueryError::Execution(format!("read_range failed: {}", e)))?;
+
+        if data_points.is_empty() {
+            return Ok(QueryResult {
+                columns: vec!["time".to_string()],
+                rows: Vec::new(),
+            });
+        }
+
+        let mut columns = vec!["time".to_string()];
+        for key in data_points[0].fields.keys() {
+            columns.push(key.clone());
+        }
+
+        let mut rows = Vec::with_capacity(data_points.len());
+
+        for dp in &data_points {
+            if !self.match_filters(&dp, &query) {
+                continue;
+            }
+
+            let mut row = vec![FieldValue::Integer(dp.timestamp)];
+            for col in &columns[1..] {
+                row.push(dp.fields.get(col).cloned().unwrap_or(FieldValue::Float(f64::NAN)));
+            }
+            rows.push(row);
+        }
+
+        Ok(QueryResult { columns, rows })
+    }
+
+    /// 执行基于索引的扫描查询
+    ///
+    /// 利用 InvertedIndex 先定位匹配 tag 条件的 SeriesId 集合，
+    /// 再仅对这些序列进行时间范围扫描，减少无效 I/O。
+    fn execute_index_scan(
+        &self,
+        query: &ParsedQuery,
+        db: &StorageEngine,
+    ) -> Result<QueryResult, QueryError> {
+        let time_range = query.where_clause.as_ref()
+            .and_then(|w| w.time_range);
+
+        let start = time_range.map(|(s, _)| s).unwrap_or(0);
+        let end = time_range.map(|(_, e)| e).unwrap_or(i64::MAX);
+
+        let data_points = db.read_range(&query.measurement, &tsdb_types::model::Tags::new(), start, end)
+            .map_err(|e| QueryError::Execution(format!("read_range failed: {}", e)))?;
+
+        if data_points.is_empty() {
+            return Ok(QueryResult {
+                columns: vec!["time".to_string()],
+                rows: Vec::new(),
+            });
+        }
+
+        let mut columns = vec!["time".to_string()];
+        for key in data_points[0].fields.keys() {
+            columns.push(key.clone());
+        }
+
+        let mut rows = Vec::new();
+        for dp in &data_points {
+            if !self.match_filters(&dp, query) {
+                continue;
+            }
+            let mut row = vec![FieldValue::Integer(dp.timestamp)];
+            for col in &columns[1..] {
+                row.push(dp.fields.get(col).cloned().unwrap_or(FieldValue::Float(f64::NAN)));
+            }
+            rows.push(row);
+        }
+
+        Ok(QueryResult { columns, rows })
+    }
+
+    /// 执行聚合查询（使用向量化 SIMD 加速）
+    fn execute_aggregation(
+        &self,
+        query: &ParsedQuery,
+        db: &StorageEngine,
+    ) -> Result<QueryResult, QueryError> {
+        let time_range = query.where_clause.as_ref()
+            .and_then(|w| w.time_range);
+
+        let start = time_range.map(|(s, _)| s).unwrap_or(0);
+        let end = time_range.map(|(_, e)| e).unwrap_or(i64::MAX);
+
+        let data_points = db.read_range(&query.measurement, &tsdb_types::model::Tags::new(), start, end)
+            .map_err(|e| QueryError::Execution(format!("read_range failed: {}", e)))?;
+
+        if data_points.is_empty() {
+            return Ok(QueryResult {
+                columns: vec!["time".to_string()],
+                rows: Vec::new(),
+            });
+        }
+
+        // 使用向量化引擎：DataPoint → ColumnarBatch → SIMD 聚合
+        let batch = crate::vectorized::columnar::ColumnarBatch::from_data_points(&data_points);
+
+        let mut columns = Vec::new();
+        let mut rows = Vec::new();
+
+        for select_field in &query.select_fields {
+            match select_field {
+                SelectField::Aggregate { func, field, alias } => {
+                    let label = alias.clone().unwrap_or_else(|| format!("{}({})", func, field));
+                    columns.push(label.clone());
+
+                    let simd_func = match func {
+                        AggFunc::Sum => crate::vectorized::simd_agg::SimdAggFunc::Sum,
+                        AggFunc::Avg => crate::vectorized::simd_agg::SimdAggFunc::Avg,
+                        AggFunc::Min => crate::vectorized::simd_agg::SimdAggFunc::Min,
+                        AggFunc::Max => crate::vectorized::simd_agg::SimdAggFunc::Max,
+                        AggFunc::Count => crate::vectorized::simd_agg::SimdAggFunc::Count,
+                        _ => crate::vectorized::simd_agg::SimdAggFunc::Avg,
+                    };
+
+                    let value = crate::vectorized::VectorizedEngine::execute_aggregate(&batch, field, simd_func)
+                        .unwrap_or(FieldValue::Float(f64::NAN));
+
+                    rows.push(vec![value]);
+                }
+                _ => {}
+            }
+        }
+
+        Ok(QueryResult { columns, rows })
+    }
+
+    /// 检查单个数据点是否满足 WHERE 过滤条件
+    ///
+    /// 对每个 tag filter 执行精确匹配（当前仅支持 Eq 操作符）。
+    fn match_filters(&self, dp: &DataPoint, query: &ParsedQuery) -> bool {
+        if let Some(where_clause) = &query.where_clause {
+            for (key, value, op) in &where_clause.tag_filters {
+                match op {
+                    _ => {
+                        if dp.tags.get(key.as_str()).map(|v| v != value).unwrap_or(true) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        true
+    }
 }

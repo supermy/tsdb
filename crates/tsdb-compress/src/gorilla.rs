@@ -1,19 +1,74 @@
+//! # Gorilla XOR 浮点压缩算法
+//!
+//! ## 算法原理
+//!
+//! Gorilla 压缩是 Facebook Gorilla TSDB 的核心创新，专门针对 **浮点数时间序列** 优化：
+//!
+//! ```text
+//! 核心思想：相邻浮点值的 XOR 差异通常很小（仅几位不同）
+//!
+//! 原始值:    3FF19999A... (1.6 的 IEEE 754 表示)
+//! 上一个值:  3FF19999C...
+//! XOR 结果: 0000000000000002  ← 仅最后几位不同！
+//! ```
+//!
+//! ## 编码格式
+//!
+//! | 情况 | 编码位模式 | 说明 |
+//! |------|-----------|------|
+//! | 首个值 | `0` (64 bits) | 完整存储第一个 float64 |
+//! | 值相同 | `0` | 仅 1 bit，表示与上一个值完全相同 |
+//! | 复用前导/后导零 | `1 0` + 有效位 | 利用上一次的零位信息 |
+//! | 新的零位模式 | `1 1` + 前导零(6b) + 有效长度(6b) + 有效位 | 全新编码 |
+//!
+//! ## 压缩效果
+//!
+//! 对于典型的监控数据（变化缓慢），压缩比可达 **10:1** 以上。
+//!
+
 use crate::error::{CompressError, CompressResult};
 
+/// 每字节的位数常量
+const BITS_PER_BYTE: u8 = 8;
+
+/// Gorilla 浮点压缩编码器
+///
+/// 将连续的 f64 浮点值序列压缩为紧凑的二进制位流。
+///
+/// ## 内部状态
+///
+/// - `last_value`: 上一个原始值的 IEEE 754 位表示
+/// - `last_leading_zeros/trailing_zeros`: 上一次 XOR 结果的前导/后导零位数
+/// - `buf/current_byte/bits_used`: 位级写入缓冲区
+///
+/// ## 使用示例
+///
+/// 创建编码器后逐个调用 encode() 压缩浮点值，
+/// 最后调用 finish() 获取压缩后的二进制数据。
+///
 pub struct GorillaEncoder {
+    /// 上一个值的 IEEE 754 位表示（用于计算 XOR）
     last_value: u64,
+    /// 上一次 XOR 结果的前导零位数（用于复用优化）
     last_leading_zeros: u8,
+    /// 上一次 XOR 结果的后导零位数（用于复用优化）
     last_trailing_zeros: u8,
+    /// 是否已写入首个值（首个值需要完整 64 位存储）
     initialized: bool,
+    /// 已编码的浮点值数量
     count: u32,
+    /// 输出字节缓冲区（累积写入的完整字节）
     buf: Vec<u8>,
+    /// 当前正在组装的字节（位写入的目标）
     current_byte: u8,
+    /// 当前字节中已使用的位数（0~7）
     bits_used: u8,
 }
 
-const BITS_PER_BYTE: u8 = 8;
-
 impl GorillaEncoder {
+    /// 创建新的 Gorilla 编码器实例
+    ///
+    /// 所有内部状态初始化为 0/false，首次 encode() 会触发特殊的首值处理路径。
     pub fn new() -> Self {
         Self {
             last_value: 0,
@@ -27,6 +82,19 @@ impl GorillaEncoder {
         }
     }
 
+    /// 编码单个 f64 浮点值到位流中
+    ///
+    /// ## 编码逻辑
+    ///
+    /// 1. **首个值**：直接写入完整的 64 位 IEEE 754 表示
+    /// 2. **XOR = 0**：值与上一个完全相同 → 写入单个 `0` bit（极致压缩！）
+    /// 3. **XOR ≠ 0 且可复用零位信息**：
+    ///    写入 `1 0` + 有效位（省略前导/后导零的编码开销）
+    /// 4. **XOR ≠ 0 且需新零位信息**：
+    ///    写入 `1 1` + 前导零数(6bit) + 有效位长度(6bit) + 有效位
+    ///
+    /// # 参数
+    /// - `value`: 待编码的 f64 浮点值
     pub fn encode(&mut self, value: f64) -> CompressResult<()> {
         let bits = value.to_bits();
         if !self.initialized {
@@ -75,6 +143,15 @@ impl GorillaEncoder {
         Ok(())
     }
 
+    /// 结束编码并返回压缩后的二进制数据
+    ///
+    /// 输出格式：
+    /// ```text
+    /// [4 字节: 值计数 (Big-Endian u32)] [N 字节: 位流数据]
+    /// ```
+    ///
+    /// # 返回
+    /// 完整的压缩二进制数据（可直接传给 GorillaDecoder 解码）
     pub fn finish(mut self) -> Vec<u8> {
         if self.bits_used > 0 {
             self.buf.push(self.current_byte);
@@ -85,6 +162,10 @@ impl GorillaEncoder {
         result
     }
 
+    /// 向位流写入单个 bit
+    ///
+    /// 从最高位（MSB）开始填充当前字节，
+    /// 字节写满后自动推入 buf 并重置。
     fn write_bit(&mut self, bit: bool) {
         if bit {
             self.current_byte |= 1 << (BITS_PER_BYTE - 1 - self.bits_used);
@@ -97,6 +178,13 @@ impl GorillaEncoder {
         }
     }
 
+    /// 向位流写入多个 bits（最多 64 位）
+    ///
+    /// 从高位到低位逐批写入，自动处理跨字节边界的情况。
+    ///
+    /// # 参数
+    /// - `value`: 待写入的位数据（从高位开始取）
+    /// - `count`: 需要写入的位数
     fn write_bits(&mut self, mut value: u64, mut count: u32) {
         while count > 0 {
             let bits_available = BITS_PER_BYTE - self.bits_used;
@@ -122,18 +210,44 @@ impl GorillaEncoder {
     }
 }
 
+/// Gorilla 浮点压缩解码器
+///
+/// 从 GorillaEncoder 产生的二进制位流中逐个还原 f64 浮点值。
+///
+/// ## 解码流程（编码的逆过程）
+///
+/// 1. 读取首值（完整 64 位）
+/// 2. 读控制位：`0` → 值不变；`1` → 有差异
+/// 3. 若有差异，读复用标志：`0` → 复用零位信息；`1` → 读取新的零位信息
+/// 4. 读取有效位并与上一个值 XOR 还原
 pub struct GorillaDecoder {
+    /// 压缩数据（去掉 4 字节头后的纯位流部分）
     data: Vec<u8>,
+    /// 当前读取位置（字节索引）
     byte_pos: usize,
+    /// 当前字节内的位偏移（0~7，从 MSB 开始）
     bit_pos: u8,
+    /// 上一个解码出的 IEEE 754 位值
     last_value: u64,
+    /// 上一次使用的前导零位数
     last_leading_zeros: u8,
+    /// 上一次使用的后导零位数
     last_trailing_zeros: u8,
+    /// 是否已完成首值初始化
     initialized: bool,
+    /// 剩余待解码的值数量
     remaining: u32,
 }
 
 impl GorillaDecoder {
+    /// 从压缩数据创建解码器实例
+    ///
+    /// # 参数
+    /// - `data`: GorillaEncoder.finish() 输出的完整压缩数据
+    ///
+    /// # 返回
+    /// - `Ok(GorillaDecoder)`: 已初始化的解码器
+    /// - `Err(CompressError::Decode)`: 数据太短或格式无效
     pub fn new(data: Vec<u8>) -> CompressResult<Self> {
         if data.len() < 4 {
             return Err(CompressError::Decode("data too short".into()));
@@ -151,6 +265,15 @@ impl GorillaDecoder {
         })
     }
 
+    /// 解码下一个浮点值
+    ///
+    /// 按照 Gorilla 编码格式的逆过程逐步解析位流。
+    /// 每次调用消耗若干 bit，返回一个还原的 f64 值。
+    ///
+    /// # 返回
+    /// - `Ok(Some(f64))`: 成功解码一个值
+    /// - `Ok(None)`: 已无更多数据可解码
+    /// - `Err(CompressError::Decode)`: 位流数据损坏或格式错误
     pub fn decode_next(&mut self) -> CompressResult<Option<f64>> {
         if self.remaining == 0 {
             return Ok(None);
@@ -213,6 +336,12 @@ impl GorillaDecoder {
         Ok(Some(f64::from_bits(self.last_value)))
     }
 
+    /// 一次性解码所有剩余的浮点值
+    ///
+    /// 便捷方法，循环调用 decode_next() 直到返回 None。
+    ///
+    /// # 返回
+    /// 所有解码出的 f64 值的向量
     pub fn decode_all(mut self) -> CompressResult<Vec<f64>> {
         let mut results = Vec::new();
         while let Some(v) = self.decode_next()? {
@@ -221,6 +350,10 @@ impl GorillaDecoder {
         Ok(results)
     }
 
+    /// 从位流中读取单个 bit
+    ///
+    /// 从当前 byte_pos 和 bit_pos 位置提取 1 个 bit，
+    /// 并推进读取位置指针。跨字节时自动处理。
     fn read_bit(&mut self) -> CompressResult<bool> {
         if self.byte_pos >= self.data.len() {
             return Err(CompressError::Decode("unexpected end of data".into()));
@@ -234,6 +367,12 @@ impl GorillaDecoder {
         Ok(bit == 1)
     }
 
+    /// 从位流中读取指定位数的值
+    ///
+    /// 逐 bit 调用 read_bit() 并组装成 u64 整数。
+    ///
+    /// # 参数
+    /// - `count`: 需要读取的位数
     fn read_bits(&mut self, count: u32) -> CompressResult<u64> {
         let mut result = 0u64;
         for _ in 0..count {

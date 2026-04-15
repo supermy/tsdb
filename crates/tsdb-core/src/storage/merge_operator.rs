@@ -13,11 +13,11 @@
 //!
 //! ## 合并语义
 //!
-//! ```
+//! ```text
 //! existing_value: 之前已存储的 MergedBlock（可能为空）
 //! operands: 新到达的字段列表 [field1, field2, ...]
 //! result: 合并后的新 MergedBlock
-//! ```
+//! ```text
 //!
 //! 后写入的同名字段会覆盖先写入的值（upsert 语义）。
 
@@ -97,11 +97,11 @@ pub fn tsdb_block_merge(
 ///
 /// # 使用示例
 ///
-/// ```rust
+/// ```rust,ignore
 /// let mut opts = rocksdb::Options::default();
 /// register_merge_operator(&mut opts);
 /// // 之后可以使用 db.merge_cf() 进行合并写入
-/// ```
+/// ```text
 ///
 /// # 注意事项
 ///

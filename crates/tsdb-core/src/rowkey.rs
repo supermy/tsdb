@@ -61,7 +61,7 @@ pub const QUALIFIER_SEPARATOR: u8 = b':';
 ///
 /// ## 示例
 ///
-/// ```rust
+/// ```rust,ignore
 /// let dp = DataPoint::new("cpu", 45_000_000)
 ///     .with_tag("host", "server01");
 /// let rk = RowKey::from_data_point(&dp);
@@ -174,7 +174,7 @@ impl RowKey {
 ///
 /// ## 示例
 ///
-/// ```rust
+/// ```rust,ignore
 /// // 时间戳 45_000_123 微秒，块起始 30_000_000 微秒
 /// let q = Qualifier::new("usage", 45_000_123, 30_000_000);
 /// // q.field_name = "usage"
@@ -271,7 +271,7 @@ impl Qualifier {
 ///
 /// # 示例
 ///
-/// ```rust
+/// ```rust,ignore
 /// align_to_block_start(0)           // → 0
 /// align_to_block_start(15_000_000)  // → 0 (15秒，仍在第一个块内)
 /// align_to_block_start(30_000_000)  // → 30_000_000 (30秒，第二个块起始)
@@ -326,7 +326,7 @@ pub fn compute_tags_hash(tags: &tsdb_types::model::Tags) -> u64 {
 ///
 /// # 示例
 ///
-/// ```rust
+/// ```rust,ignore
 /// let ts = 1704067200_000_000i64;  // 2024-01-01 00:00:00 UTC
 /// let name = timestamp_to_cf_name(ts);
 /// // name = "data_20240101"

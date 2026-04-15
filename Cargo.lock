@@ -1020,10 +1020,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "nng",
+ "rocksdb",
  "serde",
+ "serde_json",
+ "tempfile",
  "thiserror",
  "tracing",
  "tsdb-config",
+ "tsdb-core",
  "tsdb-types",
 ]
 

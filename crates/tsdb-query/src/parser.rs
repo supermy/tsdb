@@ -1,25 +1,71 @@
+//! # SQL 解析器 — 将 SQL 字符串转换为结构化查询对象
+//!
+//! ## 功能概述
+//!
+//! 基于 `sqlparser` crate 实现 TSDB 方言的 SQL 解析，支持以下语法：
+//!
+//! ```sql
+//! -- 简单查询
+//! SELECT * FROM cpu WHERE host='server01' AND time > 1713158400000000
+//!
+//! -- 聚合查询
+//! SELECT AVG(usage), MAX(usage) FROM cpu GROUP BY host ORDER BY time DESC LIMIT 100
+//! ```
+//!
+//! ## 解析流程
+//!
+//! ```text
+//! SQL 字符串
+//!     │
+//!     ▼ (sqlparser 解析)
+//! sqlparser::ast::Statement
+//!     │
+//!     ▼ (语义转换)
+//! ParsedQuery {
+//!     measurement: "cpu",
+//!     select_fields: [Aggregate { func: Avg, field: "usage" }],
+//!     where_clause: Some { time_range, tag_filters },
+//!     group_by: [Tag("host")],
+//!     order_by: Some { field: "time", desc: true },
+//!     limit: Some(100),
+//! }
+//! ```
+//!
+
 use sqlparser::dialect::GenericDialect;
 use sqlparser::ast::{Statement, Query, SetExpr, SelectItem, Expr, BinaryOperator, Value};
 use sqlparser::parser::Parser;
 use thiserror::Error;
 
+/// 解析后的查询结构 — SQL → ParsedQuery 的中间表示
 #[derive(Debug, Clone)]
 pub struct ParsedQuery {
+    /// 目标 measurement（表名），如 `"cpu"`, `"memory"`
     pub measurement: String,
+    /// SELECT 子句中的字段列表（支持通配符、普通字段、聚合函数）
     pub select_fields: Vec<SelectField>,
+    /// WHERE 条件（时间范围 + 标签过滤）
     pub where_clause: Option<WhereClause>,
+    /// GROUP BY 表达式列表（按时间维度或标签分组）
     pub group_by: Vec<GroupByExpr>,
+    /// ORDER BY 排序表达式
     pub order_by: Option<OrderByExpr>,
+    /// LIMIT 返回行数限制
     pub limit: Option<usize>,
 }
 
+/// SELECT 字段类型枚举
 #[derive(Debug, Clone)]
 pub enum SelectField {
+    /// 通配符 `SELECT *`
     Star,
+    /// 普通字段名 `SELECT usage`
     Field(String),
+    /// 聚合函数 `SELECT AVG(usage) AS avg_usage`
     Aggregate { func: AggFunc, field: String, alias: Option<String> },
 }
 
+/// 支持的聚合函数类型
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AggFunc {
     Sum,
@@ -45,12 +91,16 @@ impl std::fmt::Display for AggFunc {
     }
 }
 
+/// WHERE 子句解析结果
 #[derive(Debug, Clone)]
 pub struct WhereClause {
+    /// 时间范围过滤 `(起始时间戳, 结束时间戳)`
     pub time_range: Option<(i64, i64)>,
+    /// 标签过滤条件列表 `(key, value, 操作符)`
     pub tag_filters: Vec<(String, String, FilterOp)>,
 }
 
+/// 过滤操作符类型
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FilterOp {
     Eq,
@@ -61,18 +111,25 @@ pub enum FilterOp {
     Le,
 }
 
+/// GROUP BY 表达式类型
 #[derive(Debug, Clone)]
 pub enum GroupByExpr {
+    /// 按时间维度分组（如按小时/天）
     Time { interval: i64 },
+    /// 按标签分组
     Tag(String),
 }
 
+/// ORDER BY 排序表达式
 #[derive(Debug, Clone)]
 pub struct OrderByExpr {
+    /// 排序字段名
     pub field: String,
+    /// 是否降序排列
     pub desc: bool,
 }
 
+/// SQL 解析错误类型
 #[derive(Error, Debug)]
 pub enum ParseError {
     #[error("SQL parse error: {0}")]
@@ -83,17 +140,32 @@ pub enum ParseError {
     InvalidMeasurement(String),
 }
 
+/// SQL 解析器实例
+///
+/// 使用 GenericDialect（通用 SQL 方言）作为底层解析引擎，
+/// 将标准 SQL AST 转换为 TSDB 专用的 ParsedQuery 结构。
 pub struct SqlParser {
     dialect: GenericDialect,
 }
 
 impl SqlParser {
+    /// 创建新的 SQL 解析器实例
     pub fn new() -> Self {
         Self {
             dialect: GenericDialect {},
         }
     }
 
+    /// 解析 SQL 字符串为 ParsedQuery 结构
+    ///
+    /// 仅支持单条 SELECT 语句，不支持 INSERT/UPDATE/DELETE 等。
+    ///
+    /// # 参数
+    /// - `sql`: 原始 SQL 查询字符串
+    ///
+    /// # 返回
+    /// - `Ok(ParsedQuery)`: 成功解析的结构化查询
+    /// - `Err(ParseError)`: SQL 语法错误或不受支持的查询类型
     pub fn parse(&self, sql: &str) -> Result<ParsedQuery, ParseError> {
         let statement = Parser::parse_sql(&self.dialect, sql)
             .map_err(|e| ParseError::SqlParse(e.to_string()))?;
@@ -108,6 +180,7 @@ impl SqlParser {
         }
     }
 
+    /// 解析 Query AST 为 ParsedQuery
     fn parse_query(&self, query: &Query) -> Result<ParsedQuery, ParseError> {
         let body = &query.body;
         match body.as_ref() {
@@ -153,6 +226,7 @@ impl SqlParser {
         }
     }
 
+    /// 解析单个 SELECT 投影项
     fn parse_select_item(&self, item: &SelectItem) -> Result<SelectField, ParseError> {
         match item {
             SelectItem::Wildcard(_) => Ok(SelectField::Star),
@@ -186,6 +260,7 @@ impl SqlParser {
         }
     }
 
+    /// 将函数名字符串映射为 AggFunc 枚举
     fn parse_agg_func(&self, name: &str) -> Result<AggFunc, ParseError> {
         match name {
             "SUM" => Ok(AggFunc::Sum),
@@ -199,6 +274,7 @@ impl SqlParser {
         }
     }
 
+    /// 从函数参数中提取目标字段名或常量值
     fn extract_func_arg(&self, func: &sqlparser::ast::Function) -> String {
         match &func.args {
             sqlparser::ast::FunctionArguments::List(list) => {
@@ -223,6 +299,7 @@ impl SqlParser {
         }
     }
 
+    /// 解析 WHERE 子句为 WhereClause 结构
     fn parse_where(&self, expr: &Expr) -> Result<WhereClause, ParseError> {
         let mut time_range = None;
         let mut tag_filters = Vec::new();
@@ -230,6 +307,7 @@ impl SqlParser {
         Ok(WhereClause { time_range, tag_filters })
     }
 
+    /// 递归提取 WHERE 中的过滤条件（支持 AND 组合）
     fn extract_filters(
         &self,
         expr: &Expr,
@@ -254,6 +332,7 @@ impl SqlParser {
         Ok(())
     }
 
+    /// 提取单个比较表达式为过滤条件
     fn extract_comparison(
         &self,
         left: &Expr,
@@ -279,6 +358,7 @@ impl SqlParser {
         Ok(())
     }
 
+    /// 解析 GROUP BY 表达式
     fn parse_group_by_expr(&self, expr: &Expr) -> Result<GroupByExpr, ParseError> {
         if let Expr::Identifier(ident) = expr {
             return Ok(GroupByExpr::Tag(ident.value.clone()));
@@ -286,6 +366,7 @@ impl SqlParser {
         Err(ParseError::Unsupported(format!("unsupported GROUP BY: {:?}", expr)))
     }
 
+    /// 解析 ORDER BY 表达式
     fn parse_order_by(&self, expr: &sqlparser::ast::OrderByExpr) -> OrderByExpr {
         OrderByExpr {
             field: expr.expr.to_string(),

@@ -1,7 +1,18 @@
-use tsdb_types::model::DataPoint;
+//! # 插件注册表 — 插件实例的统一管理
+//!
+//! PluginRegistry 是 TSDB 的插件容器，负责：
+//! - 注册：接收并存储各类插件的 Box<dyn Trait> 实例
+//! - 查找：按名称获取已注册的插件引用
+//! - 列表：枚举所有已注册的插件
+//! - 分发：将数据点路由到对应的业务插件进行校验
+
 use crate::traits::{BusinessPlugin, QueryPlugin, StoragePlugin};
+use tsdb_types::model::DataPoint;
 use std::collections::HashMap;
 
+/// 插件注册表 — 管理所有已加载的插件实例
+///
+/// 内部维护三个独立的 HashMap，分别存储三种类型的插件。
 pub struct PluginRegistry {
     business_plugins: HashMap<String, Box<dyn BusinessPlugin>>,
     query_plugins: HashMap<String, Box<dyn QueryPlugin>>,

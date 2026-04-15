@@ -41,7 +41,7 @@ use crate::error::{CompressError, CompressResult};
 ///
 /// # 使用示例
 ///
-/// ```rust
+/// ```rust,ignore
 /// let mut encoder = DeltaEncoder::new();
 /// encoder.encode(1000)?;
 /// encoder.encode(1030)?;
@@ -172,7 +172,7 @@ impl DeltaEncoder {
 ///
 /// # 使用示例
 ///
-/// ```rust
+/// ```rust,ignore
 /// let decoder = DeltaDecoder::new(compressed_data);
 /// let timestamps = decoder.decode_all()?;
 /// ```

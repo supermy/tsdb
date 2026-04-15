@@ -1,170 +1,84 @@
-use crate::parser::ParsedQuery;
-use tsdb_types::model::{DataPoint, FieldValue};
-use std::collections::HashMap;
+//! # 查询规划器 — 根据查询特征选择最优执行策略
+//!
+//! ## 规划策略
+//!
+//! QueryPlanner 分析 ParsedQuery 的结构特征，选择最合适的执行路径：
+//!
+//! | 查询特征 | 选择策略 | 说明 |
+//! |---------|----------|------|
+//! | SELECT * / 无聚合 | FullScan | 全表扫描，返回原始数据 |
+//! | 有 WHERE tag 条件 | IndexScan | 利用倒排索引过滤 |
+//! | 有 SUM/AVG/MAX 等 | Aggregation | 聚合下推，减少数据传输 |
+//!
 
+use crate::parser::{ParsedQuery, SelectField};
+
+/// 扫描策略枚举
 #[derive(Debug, Clone)]
-pub enum PlanNode {
-    Scan {
-        measurement: String,
-        time_range: Option<(i64, i64)>,
-        tag_filters: Vec<(String, String)>,
-    },
-    Filter {
-        input: Box<PlanNode>,
-        predicate: FilterPredicate,
-    },
-    Project {
-        input: Box<PlanNode>,
-        fields: Vec<String>,
-    },
-    Aggregate {
-        input: Box<PlanNode>,
-        aggs: Vec<AggExpr>,
-        group_by: Vec<String>,
-    },
-    Sort {
-        input: Box<PlanNode>,
-        field: String,
-        desc: bool,
-    },
-    Limit {
-        input: Box<PlanNode>,
-        count: usize,
-    },
+pub enum ScanType {
+    /// 全表扫描 — 遍历所有数据点，在内存中过滤
+    FullScan,
+    /// 索引扫描 — 利用倒排索引定位目标序列后扫描
+    IndexScan,
+    /// 聚合扫描 — 在存储层完成部分聚合计算
+    Aggregation,
 }
 
+/// 执行计划 — 一次查询的完整执行蓝图
+///
+/// 包含查询优化器选择的扫描类型和需要传递给执行器的元信息。
 #[derive(Debug, Clone)]
-pub struct FilterPredicate {
-    pub field: String,
-    pub op: FilterOp,
-    pub value: FieldValue,
+pub struct ExecutionPlan {
+    /// 数据扫描方式（决定 execute() 走哪条代码路径）
+    pub scan_type: ScanType,
+    /// 是否有聚合函数（影响结果集格式）
+    pub has_aggregations: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FilterOp {
-    Eq,
-    Ne,
-    Gt,
-    Lt,
-    Ge,
-    Le,
-}
-
-#[derive(Debug, Clone)]
-pub struct AggExpr {
-    pub func: AggFunc,
-    pub field: String,
-    pub alias: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AggFunc {
-    Sum,
-    Avg,
-    Min,
-    Max,
-    Count,
-    First,
-    Last,
-}
-
+/// 查询规划器 — ParsedQuery → ExecutionPlan 的转换器
+///
+/// ## 核心规则
+///
+/// 1. **SELECT * 或纯字段查询** → `FullScan`（最简单的路径）
+/// 2. **WHERE 含 tag 过滤条件** → `IndexScan`（利用 InvertedIndex）
+/// 3. **含 SUM/AVG/MIN/MAX/COUNT** → `Aggregation`（聚合下推）
+///
+/// TODO: 后续可扩展更复杂的规则（如基于统计信息的代价估算）。
 pub struct QueryPlanner;
 
 impl QueryPlanner {
-    pub fn plan(query: &ParsedQuery) -> PlanNode {
-        let scan = PlanNode::Scan {
-            measurement: query.measurement.clone(),
-            time_range: query.where_clause.as_ref().and_then(|w| w.time_range),
-            tag_filters: query.where_clause.as_ref()
-                .map(|w| w.tag_filters.iter()
-                    .filter(|(_, _, op)| *op == crate::parser::FilterOp::Eq)
-                    .map(|(k, v, _)| (k.clone(), v.clone()))
-                    .collect())
-                .unwrap_or_default(),
-        };
+    /// 创建新的查询规划器实例（无状态对象）
+    pub fn new() -> Self { Self }
 
-        let mut plan = PlanNode::Scan {
-            measurement: query.measurement.clone(),
-            time_range: query.where_clause.as_ref().and_then(|w| w.time_range),
-            tag_filters: query.where_clause.as_ref()
-                .map(|w| w.tag_filters.iter()
-                    .filter(|(_, _, op)| *op == crate::parser::FilterOp::Eq)
-                    .map(|(k, v, _)| (k.clone(), v.clone()))
-                    .collect())
-                .unwrap_or_default(),
-        };
+    /// 根据解析后的查询生成执行计划
+    ///
+    /// # 参数
+    /// - `query`: SqlParser 输出的结构化查询
+    ///
+    /// # 返回
+    /// - `Ok(ExecutionPlan)`: 最优执行策略
+    /// - `Err(String)`: 无法确定执行策略
+    pub fn plan(&self, query: &ParsedQuery) -> Result<ExecutionPlan, String> {
+        let has_agg = query.select_fields.iter().any(|f| matches!(f, SelectField::Aggregate { .. }));
+        let has_tag_filters = query.where_clause.as_ref()
+            .map(|w| !w.tag_filters.is_empty())
+            .unwrap_or(false);
 
-        if !query.select_fields.iter().all(|f| matches!(f, crate::parser::SelectField::Star)) {
-            let fields: Vec<String> = query.select_fields.iter()
-                .filter_map(|f| match f {
-                    crate::parser::SelectField::Field(name) => Some(name.clone()),
-                    crate::parser::SelectField::Aggregate { field, .. } => Some(field.clone()),
-                    _ => None,
-                })
-                .collect();
-            if !fields.is_empty() {
-                plan = PlanNode::Project {
-                    input: Box::new(plan),
-                    fields,
-                };
-            }
+        if has_agg {
+            Ok(ExecutionPlan {
+                scan_type: ScanType::Aggregation,
+                has_aggregations: true,
+            })
+        } else if has_tag_filters {
+            Ok(ExecutionPlan {
+                scan_type: ScanType::IndexScan,
+                has_aggregations: false,
+            })
+        } else {
+            Ok(ExecutionPlan {
+                scan_type: ScanType::FullScan,
+                has_aggregations: false,
+            })
         }
-
-        let has_aggregate = query.select_fields.iter()
-            .any(|f| matches!(f, crate::parser::SelectField::Aggregate { .. }));
-
-        if has_aggregate {
-            let aggs: Vec<AggExpr> = query.select_fields.iter()
-                .filter_map(|f| match f {
-                    crate::parser::SelectField::Aggregate { func, field, alias } => {
-                        let agg_func = match func {
-                            crate::parser::AggFunc::Sum => AggFunc::Sum,
-                            crate::parser::AggFunc::Avg => AggFunc::Avg,
-                            crate::parser::AggFunc::Min => AggFunc::Min,
-                            crate::parser::AggFunc::Max => AggFunc::Max,
-                            crate::parser::AggFunc::Count => AggFunc::Count,
-                            crate::parser::AggFunc::First => AggFunc::First,
-                            crate::parser::AggFunc::Last => AggFunc::Last,
-                        };
-                        Some(AggExpr {
-                            func: agg_func,
-                            field: field.clone(),
-                            alias: alias.clone(),
-                        })
-                    }
-                    _ => None,
-                })
-                .collect();
-
-            let group_by: Vec<String> = query.group_by.iter()
-                .filter_map(|g| match g {
-                    crate::parser::GroupByExpr::Tag(name) => Some(name.clone()),
-                    _ => None,
-                })
-                .collect();
-
-            plan = PlanNode::Aggregate {
-                input: Box::new(plan),
-                aggs,
-                group_by,
-            };
-        }
-
-        if let Some(order) = &query.order_by {
-            plan = PlanNode::Sort {
-                input: Box::new(plan),
-                field: order.field.clone(),
-                desc: order.desc,
-            };
-        }
-
-        if let Some(limit) = query.limit {
-            plan = PlanNode::Limit {
-                input: Box::new(plan),
-                count: limit,
-            };
-        }
-
-        plan
     }
 }

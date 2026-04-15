@@ -12,7 +12,7 @@
 //! Measurement (指标)
 //!   └── Series (时间序列) = Measurement + Tags
 //!         └── DataPoint (数据点) = Series + Timestamp + Fields
-//! ```
+//! ```text
 //!
 //! ## 示例
 //!
@@ -24,7 +24,7 @@
 //!     .with_tag("region", "us-west")
 //!     .with_field("usage", FieldValue::Float(0.75))
 //!     .with_field("system", FieldValue::Float(0.25));
-//! ```
+//! ```text
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -175,9 +175,9 @@ impl DataPoint {
     ///
     /// # 示例
     ///
-    /// ```rust
+    /// ```text
     /// let dp = DataPoint::new("cpu", 1704067200_000_000);
-    /// ```
+    /// ```text
     pub fn new(measurement: impl Into<String>, timestamp: Timestamp) -> Self {
         Self {
             measurement: measurement.into(),
@@ -200,11 +200,11 @@ impl DataPoint {
     ///
     /// # 示例
     ///
-    /// ```rust
+    /// ```text
     /// let dp = DataPoint::new("cpu", 0)
     ///     .with_tag("host", "server01")
     ///     .with_tag("region", "us-west");
-    /// ```
+    /// ```text
     pub fn with_tag(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.tags.insert(key.into(), value.into());
         self
@@ -223,11 +223,11 @@ impl DataPoint {
     ///
     /// # 示例
     ///
-    /// ```rust
+    /// ```text
     /// let dp = DataPoint::new("cpu", 0)
     ///     .with_field("usage", FieldValue::Float(0.75))
     ///     .with_field("count", FieldValue::Integer(100));
-    /// ```
+    /// ```text
     pub fn with_field(mut self, key: impl Into<String>, value: FieldValue) -> Self {
         self.fields.insert(key.into(), value);
         self

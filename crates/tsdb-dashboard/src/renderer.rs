@@ -1,35 +1,55 @@
+//! # 仪表盘渲染器 — 将 Dashboard 数据渲染为 HTML 页面
+//!
+//! ## 功能
+//!
+//! DashboardRenderer 提供两个静态方法：
+//! - `render_business_html()`: 业务仪表盘 → 响应式 HTML（指标卡片网格）
+//! - `render_performance_html()`: 性能仪表盘 → 响应式 HTML（进度条 + 系统概览）
+//!
+//! ## 输出格式
+//!
+//! 完整的 HTML5 文档，包含内联 CSS 样式，可直接在浏览器中打开，
+//! 无需任何外部依赖（无 CDN、无 JavaScript 框架）。
+//!
+
 use crate::business::BusinessDashboard;
 use crate::performance::PerformanceDashboard;
 use tsdb_chart::SvgRenderer;
 
+/// 仪表盘输出格式枚举
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DashboardFormat {
+    /// HTML 格式（完整网页，含 CSS 样式）
     Html,
+    /// JSON 格式（结构化数据，供前端框架消费）
     Json,
+    /// SVG 格式（矢量图形，用于嵌入或下载）
     Svg,
 }
 
+/// 仪表盘渲染器 — Dashboard 数据 → HTML 页面的转换器
+///
+/// 采用纯字符串拼接生成 HTML，零外部依赖。
+/// 样式使用现代 CSS Grid/Flexbox 布局，支持响应式设计。
 pub struct DashboardRenderer;
 
 impl DashboardRenderer {
+    /// 渲染业务仪表盘为完整的 HTML 页面
+    ///
+    /// 生成响应式 HTML，包含指标卡片网格和统计信息栏。
     pub fn render_business_html(dash: &BusinessDashboard) -> String {
         let json = dash.summary_json();
+
+        // 从 JSON 中提取各指标数据，生成 HTML 卡片
         let metrics_html = json["metrics"].as_array().map(|arr| {
             arr.iter().map(|m| {
                 let name = m["name"].as_str().unwrap_or("");
                 let value = m["value"].as_f64().unwrap_or(0.0);
                 let change = m["change_pct"].as_str().unwrap_or("");
                 let trend = m["trend"].as_str().unwrap_or("");
-                let color = match trend {
-                    "up" => "#e15759",
-                    "down" => "#59a14f",
-                    _ => "#4e79a7",
-                };
-                let arrow = match trend {
-                    "up" => "\u{2191}",
-                    "down" => "\u{2193}",
-                    _ => "\u{2192}",
-                };
+                // 根据趋势选择颜色和箭头符号
+                let color = match trend { "up" => "#e15759", "down" => "#59a14f", _ => "#4e79a7" };
+                let arrow = match trend { "up" => "\u{2191}", "down" => "\u{2193}", _ => "\u{2192}" };
                 format!(
                     r#"<div class="metric-card">
                         <div class="metric-name">{}</div>
@@ -41,6 +61,7 @@ impl DashboardRenderer {
             }).collect::<Vec<_>>().join("")
         }).unwrap_or_default();
 
+        // 组装完整 HTML 页面（含内联 CSS 样式表）
         format!(
             r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>TSDB Business Dashboard</title>
 <style>
@@ -68,14 +89,21 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: 
         )
     }
 
+    /// 渲染性能仪表盘为完整的 HTML 页面
+    ///
+    /// 生成响应式 HTML，包含进度条卡片网格和系统概览区域。
+    /// 每个进度条卡片根据等级自动着色：Good→绿色，Warning→橙色，Critical→红色。
     pub fn render_performance_html(dash: &PerformanceDashboard) -> String {
         let json = dash.summary_json();
+
+        // 生成进度条卡片 HTML
         let gauges_html = json["gauges"].as_array().map(|arr| {
             arr.iter().map(|g| {
                 let name = g["name"].as_str().unwrap_or("");
                 let value = g["value"].as_f64().unwrap_or(0.0);
                 let pct = g["percentage"].as_i64().unwrap_or(0);
                 let level = g["level"].as_str().unwrap_or("");
+                // 根据等级选择颜色方案
                 let (color, bg_color) = match level {
                     "good" => ("#59a14f", "#eaf5ea"),
                     "warning" => ("#f28e2b", "#fef3e6"),

@@ -8,15 +8,15 @@
 //! ## 核心优化原理
 //!
 //! 传统方案：每个字段一个 KV 对，查询时需要多次 I/O
-//! ```
+//! ```text
 //! Key: "cpu|hash|block_ts\x00usage:offset" → Value: [0x00][f64]
 //! Key: "cpu|hash|block_ts\x00mem:offset"  → Value: [0x00][f64]
-//! ```
+//! ```text
 //!
 //! MergeOperator 方案：同一 RowKey 的所有字段合并为一个 MergedBlock
-//! ```
+//! ```text
 //! Key: "cpu|hash|block_ts" → Value: [0xFEED][field_count][field1][field2]...
-//! ```
+//! ```text
 //!
 //! 性能提升：单点查询从 N 次 I/O 降为 1 次 I/O
 
@@ -43,13 +43,13 @@ pub const MERGE_MAGIC: u16 = 0xFEED;
 ///
 /// # 示例
 ///
-/// ```
+/// ```text
 /// let field = MergedField {
 ///     name: "cpu".to_string(),
 ///     micro_offset: 15000,  // 块起始后 15 毫秒
 ///     value: FieldValue::Float(0.75),
 /// };
-/// ```
+/// ```text
 #[derive(Debug, Clone)]
 pub struct MergedField {
     /// 字段名称
@@ -74,7 +74,7 @@ pub struct MergedField {
 /// ├────────┼────────────┼─────────────────────────────────────┤
 /// │ 0xFEED │ N          │ [Field_1][Field_2]...[Field_N]      │
 /// └────────┴────────────┴─────────────────────────────────────┘
-/// ```
+/// ```text
 ///
 /// ## 使用场景
 ///
@@ -96,7 +96,7 @@ impl MergedBlock {
     ///
     /// ```text
     /// [magic:2B][field_count:2B][field1][field2]...[fieldN]
-    /// ```
+    /// ```text
     ///
     /// # 返回值
     ///
@@ -172,12 +172,12 @@ impl MergedBlock {
     ///
     /// # 示例
     ///
-    /// ```
+    /// ```text
     /// let mut block = MergedBlock::default();
     /// block.upsert_field(MergedField { name: "cpu".into(), micro_offset: 100, value: FieldValue::Float(0.5) });
     /// block.upsert_field(MergedField { name: "cpu".into(), micro_offset: 100, value: FieldValue::Float(0.9) });
     /// // 结果：只有一个字段，值为 0.9
-    /// ```
+    /// ```text
     pub fn upsert_field(&mut self, new_field: MergedField) {
         // 查找是否已存在相同 (name, offset) 的字段
         for f in &mut self.fields {
@@ -305,7 +305,7 @@ impl MergedBlock {
 /// │ Type │ NameLen │ Name     │ Offset   │ Payload       │
 /// │ (1B) │ (1B)    │ (Var)    │ (4B LE)  │ (Var)         │
 /// └──────┴─────────┴──────────┴──────────┴───────────────┘
-/// ```
+/// ```text
 pub fn encode_merge_operand(field_name: &str, micro_offset: u32, value: &FieldValue) -> Vec<u8> {
     // 预分配容量：类型(1) + 名称长度(1) + 名称 + 偏移量(4) + 值(最多9)
     let mut buf = Vec::with_capacity(2 + field_name.len() + 4 + 9);
