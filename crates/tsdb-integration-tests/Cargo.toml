@@ -1,0 +1,19 @@
+[package]
+name = "tsdb-integration-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tsdb-core = { workspace = true }
+tsdb-query = { workspace = true }
+tsdb-index = { workspace = true }
+tsdb-compress = { workspace = true }
+tsdb-aggregate = { workspace = true }
+tsdb-server = { workspace = true }
+tsdb-types = { workspace = true }
+tsdb-config = { workspace = true }
+tsdb-chart = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }

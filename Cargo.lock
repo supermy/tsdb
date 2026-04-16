@@ -1780,6 +1780,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "tsdb-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tsdb-aggregate",
+ "tsdb-chart",
+ "tsdb-compress",
+ "tsdb-config",
+ "tsdb-core",
+ "tsdb-index",
+ "tsdb-query",
+ "tsdb-server",
+ "tsdb-types",
+]
+
+[[package]]
 name = "tsdb-plugin"
 version = "0.1.0"
 dependencies = [
