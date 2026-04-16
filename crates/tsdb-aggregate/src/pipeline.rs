@@ -196,6 +196,7 @@ impl LightAggregationPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tsdb_types::model::FieldValue;
 
     #[test]
     fn test_pipeline_accumulate_and_flush() {
@@ -241,5 +242,37 @@ mod tests {
         assert_eq!(pipeline.bucket_count(), 1);
         pipeline.flush_all().unwrap();
         assert_eq!(pipeline.bucket_count(), 0);
+    }
+
+    #[test]
+    fn test_pipeline_new_pipeline_empty() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let store_mgr = Arc::new(AggregationStoreManager::new(dir.path().to_path_buf()));
+        let config = PipelineConfig {
+            buffer_size: 10,
+            flush_interval_secs: 60,
+            dimensions: vec![TimeDimension::Hour, TimeDimension::Day],
+        };
+        let pipeline = LightAggregationPipeline::new(config, store_mgr);
+        assert_eq!(pipeline.buffered_count(), 0);
+        assert_eq!(pipeline.bucket_count(), 0);
+    }
+
+    #[test]
+    fn test_pipeline_multi_dimension() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let store_mgr = Arc::new(AggregationStoreManager::new(dir.path().to_path_buf()));
+        let config = PipelineConfig {
+            buffer_size: 100,
+            flush_interval_secs: 3600,
+            dimensions: vec![TimeDimension::Hour, TimeDimension::Day],
+        };
+        let pipeline = LightAggregationPipeline::new(config, store_mgr);
+
+        let mut dp = DataPoint::new("cpu", 1000000);
+        dp.fields.insert("v".to_string(), FieldValue::Float(1.0));
+        pipeline.on_write("biz", &dp);
+
+        assert_eq!(pipeline.buffered_count(), 1);
     }
 }

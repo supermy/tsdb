@@ -214,4 +214,35 @@ mod tests {
         let _ = decoder;
         assert_eq!(consumed, encoded.len());
     }
+
+    #[test]
+    fn test_dictionary_empty() {
+        let encoder = DictionaryEncoder::new();
+        let (encoded, dict) = encoder.finish();
+        assert!(encoded.is_empty());
+        assert!(dict.is_empty());
+    }
+
+    #[test]
+    fn test_dictionary_duplicate_strings_same_id() {
+        let mut enc = DictionaryEncoder::new();
+        let id1 = enc.encode("same_string");
+        let id2 = enc.encode("same_string");
+        let id3 = enc.encode("same_string");
+        assert_eq!(id1, id2);
+        assert_eq!(id2, id3);
+    }
+
+    #[test]
+    fn test_dictionary_decoder_unknown_id_returns_none() {
+        let decoder = DictionaryDecoder::new(HashMap::new());
+        assert!(decoder.decode(999).is_none());
+    }
+
+    #[test]
+    fn test_dictionary_from_encoded_empty_data() {
+        let (decoder, consumed) = DictionaryDecoder::from_encoded(&[]).unwrap();
+        assert!(decoder.dictionary().is_empty());
+        assert_eq!(consumed, 0);
+    }
 }

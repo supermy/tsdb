@@ -356,4 +356,51 @@ mod tests {
         let result = idx.query_exact("host", "server01");
         assert!(result.is_empty());
     }
+
+    #[test]
+    fn test_inverted_index_query_union() {
+        let mut idx = InvertedIndex::new();
+        idx.add_series(1, &[("host".to_string(), "s1".to_string())]);
+        idx.add_series(2, &[("region".to_string(), "us".to_string())]);
+
+        let result = idx.query_union(&[
+            ("host".to_string(), "s1".to_string()),
+            ("region".to_string(), "us".to_string()),
+        ]);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_inverted_index_all_series_ids() {
+        let mut idx = InvertedIndex::new();
+        idx.add_series(10, &[("a".to_string(), "b".to_string())]);
+        idx.add_series(20, &[("c".to_string(), "d".to_string())]);
+
+        let all = idx.all_series_ids();
+        assert_eq!(all.len(), 2);
+        assert!(all.contains(10));
+        assert!(all.contains(20));
+    }
+
+    #[test]
+    fn test_inverted_index_serialize_deserialize_roundtrip() {
+        let mut idx = InvertedIndex::new();
+        idx.add_series(1, &[("host".to_string(), "s1".to_string())]);
+        idx.add_series(2, &[("host".to_string(), "s2".to_string())]);
+
+        let serialized = idx.serialize().expect("serialize should succeed");
+        assert!(!serialized.is_empty());
+
+        let restored = InvertedIndex::deserialize(&serialized).expect("deserialized");
+        assert_eq!(restored.series_count(), 2);
+        assert!(restored.query_exact("host", "s1").contains(1));
+        assert!(restored.query_exact("host", "s2").contains(2));
+    }
+
+    #[test]
+    fn test_inverted_index_query_exact_empty() {
+        let idx = InvertedIndex::new();
+        let result = idx.query_exact("nonexistent", "value");
+        assert!(result.is_empty());
+    }
 }

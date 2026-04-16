@@ -10,7 +10,7 @@ pub const PROTOCOL_VERSION_V2: u8 = 2;
 pub const CURRENT_PROTOCOL_VERSION: u8 = PROTOCOL_VERSION_V2;
 pub const PROTOCOL_MAGIC: &[u8; 4] = b"TSDB";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Envelope {
     pub magic: [u8; 4],
     pub version: u8,
@@ -61,33 +61,24 @@ impl Envelope {
 /// 客户端请求枚举
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request {
-    /// 写入数据点（支持指定目标数据库）
     Write {
-        /// 目标数据库名称（空字符串表示使用 default）
         database: String,
         measurement: String,
         tags: Vec<(String, String)>,
         fields: Vec<(String, FieldValueProto)>,
         timestamp: i64,
     },
-
-    /// SQL 查询（支持指定目标数据库）
     Query {
-        /// 目标数据库名称（空字符串表示使用 default）
         database: String,
         sql: String,
     },
-
-    /// 创建新数据库
-    CreateDatabase { name: String },
-
-    /// 列出所有数据库
+    CreateDatabase {
+        name: String,
+    },
     ListDatabases,
-
-    /// 删除数据库
-    DropDatabase { name: String },
-
-    /// 健康检查
+    DropDatabase {
+        name: String,
+    },
     Ping,
 }
 
@@ -165,4 +156,141 @@ pub fn decode_response(data: &[u8]) -> Option<Response> {
         return rmp_serde::from_slice(&envelope.payload).ok();
     }
     rmp_serde::from_slice(data).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_envelope_wrap_v2_and_validate() {
+        let payload = b"hello world";
+        let env = Envelope::wrap_v2(payload);
+        assert_eq!(env.magic, *PROTOCOL_MAGIC);
+        assert_eq!(env.version, PROTOCOL_VERSION_V2);
+        assert!(env.crc32 != 0);
+        assert!(env.validate());
+    }
+
+    #[test]
+    fn test_envelope_wrap_v1_no_crc() {
+        let payload = b"hello";
+        let env = Envelope::wrap_v1(payload);
+        assert_eq!(env.version, PROTOCOL_VERSION_V1);
+        assert_eq!(env.crc32, 0);
+    }
+
+    #[test]
+    fn test_envelope_validate_rejects_bad_magic() {
+        let mut env = Envelope::wrap_v2(b"data");
+        env.magic = [0xFF, 0xFF, 0xFF, 0xFF];
+        assert!(!env.validate());
+    }
+
+    #[test]
+    fn test_envelope_validate_rejects_tampered_payload() {
+        let env = Envelope::wrap_v2(b"original data");
+        let mut tampered = env.clone();
+        tampered.payload = b"tampered data".to_vec();
+        assert!(!tampered.validate());
+    }
+
+    #[test]
+    fn test_envelope_encode_decode_roundtrip() {
+        let original = Envelope::wrap_v2(b"roundtrip test data");
+        let encoded = original.encode();
+        let decoded = Envelope::decode(&encoded).unwrap();
+        assert_eq!(decoded.magic, original.magic);
+        assert_eq!(decoded.version, original.version);
+        assert_eq!(decoded.payload, original.payload);
+        assert!(decoded.validate());
+    }
+
+    #[test]
+    fn test_envelope_decode_invalid_returns_none() {
+        assert!(Envelope::decode(&[0u8; 4]).is_none());
+        assert!(Envelope::decode(&[]).is_none());
+    }
+
+    #[test]
+    fn test_request_write_roundtrip() {
+        let req = Request::Write {
+            database: "default".to_string(),
+            measurement: "cpu".to_string(),
+            tags: vec![("host".to_string(), "s1".to_string())],
+            fields: vec![("usage".to_string(), FieldValueProto::Float(99.5))],
+            timestamp: 1_000_000_000,
+        };
+        let encoded = encode_request(&req);
+        let decoded = decode_request(&encoded).unwrap();
+        match decoded {
+            Request::Write {
+                database,
+                measurement,
+                ..
+            } => {
+                assert_eq!(database, "default");
+                assert_eq!(measurement, "cpu");
+            }
+            _ => panic!("expected Write"),
+        }
+    }
+
+    #[test]
+    fn test_request_query_roundtrip() {
+        let req = Request::Query {
+            database: "".to_string(),
+            sql: "SELECT * FROM cpu".to_string(),
+        };
+        let encoded = encode_request(&req);
+        let decoded = decode_request(&encoded).unwrap();
+        match decoded {
+            Request::Query { sql, .. } => assert_eq!(sql, "SELECT * FROM cpu"),
+            _ => panic!("expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_response_ok_roundtrip() {
+        let resp = Response::Ok;
+        let encoded = encode_response(&resp);
+        let decoded = decode_response(&encoded).unwrap();
+        assert!(matches!(decoded, Response::Ok));
+    }
+
+    #[test]
+    fn test_response_error_roundtrip() {
+        let resp = Response::Error("not found".to_string());
+        let encoded = encode_response(&resp);
+        let decoded = decode_response(&encoded).unwrap();
+        match decoded {
+            Response::Error(msg) => assert_eq!(msg, "not found"),
+            _ => panic!("expected Error"),
+        }
+    }
+
+    #[test]
+    fn test_field_value_proto_conversion() {
+        use tsdb_types::model::FieldValue;
+
+        let fv = FieldValue::Float(42.5);
+        let proto: FieldValueProto = fv.clone().into();
+        let back: FieldValue = proto.into();
+        assert_eq!(fv, back);
+
+        let iv = FieldValue::Integer(-100);
+        let proto: FieldValueProto = iv.clone().into();
+        let back: FieldValue = proto.into();
+        assert_eq!(iv, back);
+
+        let sv = FieldValue::String("hello".to_string());
+        let proto: FieldValueProto = sv.clone().into();
+        let back: FieldValue = proto.into();
+        assert_eq!(sv, back);
+
+        let bv = FieldValue::Boolean(true);
+        let proto: FieldValueProto = bv.clone().into();
+        let back: FieldValue = proto.into();
+        assert_eq!(bv, back);
+    }
 }

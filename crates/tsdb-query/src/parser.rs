@@ -456,4 +456,59 @@ mod tests {
             panic!("expected aggregate");
         }
     }
+
+    #[test]
+    fn test_parse_with_where_tag_filter() {
+        let parser = SqlParser::new();
+        let result = parser
+            .parse("SELECT * FROM metrics WHERE host='s1' AND region='us-west'")
+            .unwrap();
+        assert_eq!(result.measurement, "metrics");
+        let wc = result.where_clause.unwrap();
+        assert_eq!(wc.tag_filters.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_unsupported_operator_returns_error() {
+        let parser = SqlParser::new();
+        let result = parser.parse("SELECT * FROM cpu WHERE host > 's1'");
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            ParseError::Unsupported(msg) => assert!(msg.contains("unsupported WHERE operator")),
+            _ => panic!("expected Unsupported error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_multi_aggregate() {
+        let parser = SqlParser::new();
+        let result = parser
+            .parse("SELECT SUM(x), COUNT(y), MAX(z) FROM data")
+            .unwrap();
+        assert_eq!(result.select_fields.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_unknown_function_error() {
+        let parser = SqlParser::new();
+        let result = parser.parse("SELECT UNKNOWN(field) FROM t");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_non_select_rejected() {
+        let parser = SqlParser::new();
+        assert!(parser.parse("INSERT INTO t VALUES (1)").is_err());
+    }
+
+    #[test]
+    fn test_agg_func_display() {
+        assert_eq!(AggFunc::Sum.to_string(), "SUM");
+        assert_eq!(AggFunc::Avg.to_string(), "AVG");
+        assert_eq!(AggFunc::Min.to_string(), "MIN");
+        assert_eq!(AggFunc::Max.to_string(), "MAX");
+        assert_eq!(AggFunc::Count.to_string(), "COUNT");
+        assert_eq!(AggFunc::First.to_string(), "FIRST");
+        assert_eq!(AggFunc::Last.to_string(), "LAST");
+    }
 }

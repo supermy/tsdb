@@ -231,6 +231,7 @@ impl Aggregator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tsdb_types::model::FieldValue;
 
     #[test]
     fn test_time_dimension_align() {
@@ -261,5 +262,79 @@ mod tests {
         let results = agg.finalize("cpu", TimeDimension::Day);
         assert_eq!(results.len(), 1);
         assert!((results[0].values.get("usage").unwrap_or(&0.0) - 15.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_aggregator_multi_measurement() {
+        let mut agg = Aggregator::new();
+
+        let mut dp_cpu = DataPoint::new("cpu", 1000000);
+        dp_cpu
+            .fields
+            .insert("val".to_string(), FieldValue::Float(50.0));
+        agg.accumulate(&dp_cpu);
+
+        let mut dp_mem = DataPoint::new("mem", 1000000);
+        dp_mem
+            .fields
+            .insert("val".to_string(), FieldValue::Float(200.0));
+        agg.accumulate(&dp_mem);
+
+        let cpu_results = agg.finalize("cpu", TimeDimension::Hour);
+        let mem_results = agg.finalize("mem", TimeDimension::Hour);
+        assert_eq!(cpu_results.len(), 1);
+        assert_eq!(mem_results.len(), 1);
+    }
+
+    #[test]
+    fn test_aggregator_reset() {
+        let mut agg = Aggregator::new();
+        let mut dp = DataPoint::new("m", 1000);
+        dp.fields.insert("f".to_string(), FieldValue::Float(1.0));
+        agg.accumulate(&dp);
+        assert!(!agg.buckets.is_empty());
+        agg.reset();
+        assert!(agg.buckets.is_empty());
+    }
+
+    #[test]
+    fn test_aggregator_measurement_names() {
+        let mut agg = Aggregator::new();
+        let mut dp1 = DataPoint::new("cpu", 1000);
+        dp1.fields.insert("v".to_string(), FieldValue::Float(1.0));
+        agg.accumulate(&dp1);
+        let mut dp2 = DataPoint::new("mem", 1000);
+        dp2.fields.insert("v".to_string(), FieldValue::Float(2.0));
+        agg.accumulate(&dp2);
+
+        let names = agg.measurement_names(TimeDimension::Hour);
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"cpu".to_string()));
+        assert!(names.contains(&"mem".to_string()));
+    }
+
+    #[test]
+    fn test_time_dimension_from_name() {
+        assert_eq!(TimeDimension::from_name("hour"), TimeDimension::Hour);
+        assert_eq!(TimeDimension::from_name("day"), TimeDimension::Day);
+        assert_eq!(TimeDimension::from_name("week"), TimeDimension::Week);
+        assert_eq!(TimeDimension::from_name("month"), TimeDimension::Month);
+        assert_eq!(TimeDimension::from_name("unknown"), TimeDimension::Day);
+    }
+
+    #[test]
+    fn test_time_dimension_interval_secs() {
+        assert_eq!(TimeDimension::Hour.interval_secs(), 3600);
+        assert_eq!(TimeDimension::Day.interval_secs(), 86400);
+        assert_eq!(TimeDimension::Week.interval_secs(), 604800);
+        assert_eq!(TimeDimension::Month.interval_secs(), 2592000);
+    }
+
+    #[test]
+    fn test_time_dimension_alignment() {
+        let ts_day = TimeDimension::Day.align_timestamp(1713158400000000);
+        assert_eq!(ts_day % (86400 * 1_000_000), 0);
+        let ts_hour = TimeDimension::Hour.align_timestamp(1713158400000000);
+        assert_eq!(ts_hour % (3600 * 1_000_000), 0);
     }
 }

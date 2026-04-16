@@ -283,4 +283,103 @@ mod tests {
         assert_eq!(decompressed.timestamps, block.timestamps);
         assert_eq!(decompressed.fields.len(), block.fields.len());
     }
+
+    #[test]
+    fn test_block_codec_string_fields() {
+        let block = DataBlock {
+            timestamps: vec![1000, 2000],
+            fields: {
+                let mut m = HashMap::new();
+                m.insert(
+                    "status".to_string(),
+                    vec![
+                        FieldValue::String("ok".to_string()),
+                        FieldValue::String("error".to_string()),
+                    ],
+                );
+                m
+            },
+        };
+        let codec = BlockCodec;
+        let compressed = codec.compress_block(&block).unwrap();
+        let decompressed = codec.decompress_block(&compressed).unwrap();
+        assert_eq!(decompressed.timestamps, block.timestamps);
+    }
+
+    #[test]
+    fn test_block_codec_bool_fields() {
+        let block = DataBlock {
+            timestamps: vec![1000, 2000, 3000, 4000, 5000],
+            fields: {
+                let mut m = HashMap::new();
+                m.insert(
+                    "active".to_string(),
+                    vec![
+                        FieldValue::Boolean(true),
+                        FieldValue::Boolean(false),
+                        FieldValue::Boolean(true),
+                        FieldValue::Boolean(true),
+                        FieldValue::Boolean(false),
+                    ],
+                );
+                m
+            },
+        };
+        let codec = BlockCodec;
+        let compressed = codec.compress_block(&block).unwrap();
+        let decompressed = codec.decompress_block(&compressed).unwrap();
+        assert_eq!(decompressed.timestamps, block.timestamps);
+    }
+
+    #[test]
+    fn test_block_codec_empty_block() {
+        let block = DataBlock {
+            timestamps: vec![],
+            fields: HashMap::new(),
+        };
+        let codec = BlockCodec;
+        let compressed = codec.compress_block(&block).unwrap();
+        assert_eq!(compressed.row_count, 0);
+        let decompressed = codec.decompress_block(&compressed).unwrap();
+        assert!(decompressed.timestamps.is_empty());
+    }
+
+    #[test]
+    fn test_block_codec_mixed_types() {
+        let block = DataBlock {
+            timestamps: vec![1000, 2000, 3000],
+            fields: {
+                let mut m = HashMap::new();
+                m.insert(
+                    "val".to_string(),
+                    vec![
+                        FieldValue::Float(1.0),
+                        FieldValue::Float(2.0),
+                        FieldValue::Float(3.0),
+                    ],
+                );
+                m.insert(
+                    "cnt".to_string(),
+                    vec![
+                        FieldValue::Integer(10),
+                        FieldValue::Integer(20),
+                        FieldValue::Integer(30),
+                    ],
+                );
+                m.insert(
+                    "name".to_string(),
+                    vec![
+                        FieldValue::String("a".to_string()),
+                        FieldValue::String("b".to_string()),
+                        FieldValue::String("a".to_string()),
+                    ],
+                );
+                m
+            },
+        };
+        let codec = BlockCodec;
+        let compressed = codec.compress_block(&block).unwrap();
+        let decompressed = codec.decompress_block(&compressed).unwrap();
+        assert_eq!(decompressed.fields.len(), 3);
+    }
 }
