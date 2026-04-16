@@ -180,8 +180,8 @@ impl Aggregator {
             .cloned()
             .collect();
 
-        for key in keys {
-            if let Some((values, count)) = self.buckets.remove(&key) {
+        for key in &keys {
+            if let Some((values, count)) = self.buckets.remove(key) {
                 if count == 0 {
                     continue;
                 }
@@ -207,6 +207,22 @@ impl Aggregator {
     }
 
     /// 清空所有内部状态（用于复用同一实例处理新批次数据）
+    pub fn measurement_names(&self, dimension: TimeDimension) -> Vec<String> {
+        let dim_suffix = format!(":{}", dimension.name());
+        let mut seen = std::collections::HashSet::new();
+        let mut result = Vec::new();
+        for key in self.buckets.keys() {
+            if key.contains(&dim_suffix) {
+                if let Some(measurement) = key.split(':').next() {
+                    if seen.insert(measurement.to_string()) {
+                        result.push(measurement.to_string());
+                    }
+                }
+            }
+        }
+        result
+    }
+
     pub fn reset(&mut self) {
         self.buckets.clear();
     }

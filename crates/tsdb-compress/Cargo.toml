@@ -8,5 +8,4 @@ tsdb-types = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
-byteorder = { workspace = true }
 serde = { workspace = true }

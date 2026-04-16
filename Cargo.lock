@@ -1711,7 +1711,6 @@ name = "tsdb-compress"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "byteorder",
  "serde",
  "thiserror 2.0.18",
  "tracing",
@@ -1736,7 +1735,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "byteorder",
  "chrono",
  "rmp-serde",
  "rocksdb",

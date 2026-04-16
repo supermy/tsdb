@@ -343,22 +343,19 @@ impl StorageEngine {
         let end_date = micros_to_date(end_micros);
 
         // 遍历每一天的 CF
+        let prefix_key = {
+            let mut buf = measurement.as_bytes().to_vec();
+            buf.push(SEPARATOR);
+            buf.extend_from_slice(&tags_hash.to_be_bytes());
+            buf.push(SEPARATOR);
+            buf
+        };
+
         let mut current_date = start_date;
         while current_date <= end_date {
             let cf_name = self.cf_manager.get_cf_name(current_date);
 
-            // 尝试获取 CF handle
             if let Ok(cf) = self.cf_manager.cf_handle(&cf_name) {
-                // 构建前缀 Key: measurement | tags_hash |
-                let prefix_key = {
-                    let mut buf = measurement.as_bytes().to_vec();
-                    buf.push(SEPARATOR);
-                    buf.extend_from_slice(&tags_hash.to_be_bytes());
-                    buf.push(SEPARATOR);
-                    buf
-                };
-
-                // 使用前缀迭代器扫描
                 let iter = self.db.prefix_iterator_cf(&cf, &prefix_key);
                 for item in iter {
                     let (key, value) = match item {

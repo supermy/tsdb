@@ -54,10 +54,16 @@ pub async fn start_http_server_async(
                 .allow_headers(vec!["content-type"]),
         );
 
+    let socket_addr: std::net::SocketAddr = addr
+        .parse()
+        .map_err(|e| {
+            tracing::error!("invalid HTTP address '{}': {}", addr, e);
+            e
+        })
+        .unwrap_or_else(|e| panic!("invalid HTTP address '{}': {}", addr, e));
+
     info!("HTTP server starting on {}", addr);
-    warp::serve(routes)
-        .run(addr.parse::<std::net::SocketAddr>().unwrap())
-        .await;
+    warp::serve(routes).run(socket_addr).await;
 }
 
 fn with_state(

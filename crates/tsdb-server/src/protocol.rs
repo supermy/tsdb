@@ -50,7 +50,7 @@ impl Envelope {
     }
 
     pub fn encode(&self) -> Vec<u8> {
-        rmp_serde::to_vec(self).unwrap_or_default()
+        rmp_serde::to_vec(self).expect("Envelope serialization should not fail")
     }
 
     pub fn decode(data: &[u8]) -> Option<Self> {
@@ -136,7 +136,7 @@ impl From<FieldValueProto> for tsdb_types::model::FieldValue {
 }
 
 pub fn encode_request(req: &Request) -> Vec<u8> {
-    let payload = rmp_serde::to_vec(req).unwrap_or_default();
+    let payload = rmp_serde::to_vec(req).expect("Request serialization should not fail");
     let envelope = Envelope::wrap_v2(&payload);
     envelope.encode()
 }
@@ -152,7 +152,7 @@ pub fn decode_request(data: &[u8]) -> Option<Request> {
 }
 
 pub fn encode_response(resp: &Response) -> Vec<u8> {
-    let payload = rmp_serde::to_vec(resp).unwrap_or_default();
+    let payload = rmp_serde::to_vec(resp).expect("Response serialization should not fail");
     let envelope = Envelope::wrap_v2(&payload);
     envelope.encode()
 }

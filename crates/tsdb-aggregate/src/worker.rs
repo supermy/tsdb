@@ -99,12 +99,15 @@ impl Worker {
             }
 
             for dim in &time_dims {
-                let results = aggregator.finalize("cpu", *dim);
-                for result in results {
-                    info!(
-                        "Aggregation [{:?}] window_start={} values={:?}",
-                        dim, result.window_start, result.values
-                    );
+                let measurements = aggregator.measurement_names(*dim);
+                for m in &measurements {
+                    let results = aggregator.finalize(m, *dim);
+                    for result in results {
+                        info!(
+                            "Aggregation [{:?}] measurement={} window_start={} values={:?}",
+                            dim, result.measurement, result.window_start, result.values
+                        );
+                    }
                 }
             }
         });

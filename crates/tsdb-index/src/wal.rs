@@ -48,19 +48,19 @@ impl IndexWAL {
         })
     }
 
-    pub fn append_insert(&self, payload: &[u8]) -> std::io::Result<u64> {
+    pub fn append_insert(&mut self, payload: &[u8]) -> std::io::Result<u64> {
         self.append_entry(ENTRY_INSERT, payload)
     }
 
-    pub fn append_delete(&self, payload: &[u8]) -> std::io::Result<u64> {
+    pub fn append_delete(&mut self, payload: &[u8]) -> std::io::Result<u64> {
         self.append_entry(ENTRY_DELETE, payload)
     }
 
-    pub fn append_checkpoint(&self, payload: &[u8]) -> std::io::Result<u64> {
+    pub fn append_checkpoint(&mut self, payload: &[u8]) -> std::io::Result<u64> {
         self.append_entry(ENTRY_CHECKPOINT, payload)
     }
 
-    fn append_entry(&self, entry_type: u8, payload: &[u8]) -> std::io::Result<u64> {
+    fn append_entry(&mut self, entry_type: u8, payload: &[u8]) -> std::io::Result<u64> {
         let seq = self.sequence.fetch_add(1, Ordering::SeqCst);
         let crc = crc32fast::hash(payload);
 
@@ -73,10 +73,9 @@ impl IndexWAL {
 
         let entry_len = buf.len() as u32;
 
-        let mut writer = self.writer.get_ref().try_clone()?;
-        writer.write_all(&entry_len.to_le_bytes())?;
-        writer.write_all(&buf)?;
-        writer.flush()?;
+        self.writer.write_all(&entry_len.to_le_bytes())?;
+        self.writer.write_all(&buf)?;
+        self.writer.flush()?;
 
         self.bytes_written
             .fetch_add(4 + buf.len() as u64, Ordering::Relaxed);
@@ -164,10 +163,19 @@ impl IndexWAL {
         Ok(entries.iter().map(|e| e.sequence).max().unwrap_or(0))
     }
 
-    pub fn rotate(&self) -> std::io::Result<()> {
+    pub fn rotate(&mut self) -> std::io::Result<()> {
+        self.writer.flush()?;
+
         let rotated_path = self.path.with_extension("wal.old");
-        let _ = std::fs::rename(&self.path, &rotated_path);
-        let _ = std::fs::remove_file(&rotated_path);
+        std::fs::rename(&self.path, &rotated_path)
+            .and_then(|_| std::fs::remove_file(&rotated_path))?;
+
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)?;
+        self.writer = BufWriter::new(file);
+
         Ok(())
     }
 
@@ -213,7 +221,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let wal_path = dir.path().join("test.wal");
 
-        let wal = IndexWAL::open(&wal_path).unwrap();
+        let mut wal = IndexWAL::open(&wal_path).unwrap();
         wal.append_insert(b"cpu:12345:1000").unwrap();
         wal.append_insert(b"cpu:12345:2000").unwrap();
         wal.append_delete(b"cpu:12345:1000").unwrap();
@@ -230,7 +238,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let wal_path = dir.path().join("checkpoint.wal");
 
-        let wal = IndexWAL::open(&wal_path).unwrap();
+        let mut wal = IndexWAL::open(&wal_path).unwrap();
         wal.append_insert(b"data1").unwrap();
         wal.append_checkpoint(b"full_snapshot").unwrap();
         wal.append_insert(b"data2").unwrap();
@@ -245,7 +253,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let wal_path = dir.path().join("crc.wal");
 
-        let wal = IndexWAL::open(&wal_path).unwrap();
+        let mut wal = IndexWAL::open(&wal_path).unwrap();
         wal.append_insert(b"valid_data").unwrap();
 
         let mut data = std::fs::read(&wal_path).unwrap();
@@ -262,7 +270,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let wal_path = dir.path().join("seq.wal");
 
-        let wal = IndexWAL::open(&wal_path).unwrap();
+        let mut wal = IndexWAL::open(&wal_path).unwrap();
         let s1 = wal.append_insert(b"a").unwrap();
         let s2 = wal.append_insert(b"b").unwrap();
         let s3 = wal.append_insert(b"c").unwrap();
