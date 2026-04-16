@@ -137,20 +137,20 @@ impl TsdbOptions {
     pub fn hot_cf_opts() -> Options {
         let mut opts = Options::default();
 
-        // MemTable 配置（比 default 小，因为热数据 CF 多）
-        opts.set_write_buffer_size(32 * 1024 * 1024); // 32MB
+        opts.set_write_buffer_size(32 * 1024 * 1024);
         opts.set_max_write_buffer_number(3);
 
-        // 压缩配置：L0/L1 不压缩，L2/L3 LZ4，L4+ ZSTD
         opts.set_compression_per_level(&[
-            rocksdb::DBCompressionType::None, // L0: 不压缩，加速写入
-            rocksdb::DBCompressionType::Lz4,  // L1: LZ4 快速压缩
-            rocksdb::DBCompressionType::Lz4,  // L2: LZ4
-            rocksdb::DBCompressionType::Zstd, // L3+: ZSTD 高压缩比
+            rocksdb::DBCompressionType::None,
+            rocksdb::DBCompressionType::Lz4,
+            rocksdb::DBCompressionType::Lz4,
+            rocksdb::DBCompressionType::Zstd,
         ]);
 
         // 动态层级大小
         opts.set_level_compaction_dynamic_level_bytes(true);
+
+        crate::storage::merge_operator::register_merge_operator(&mut opts);
 
         opts
     }
@@ -195,6 +195,8 @@ impl TsdbOptions {
 
         // 禁用自动压缩：冷数据稳定后不需要
         opts.set_disable_auto_compactions(true);
+
+        crate::storage::merge_operator::register_merge_operator(&mut opts);
 
         opts
     }
