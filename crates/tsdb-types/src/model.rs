@@ -136,6 +136,17 @@ impl FieldValue {
     }
 }
 
+impl From<FieldValue> for serde_json::Value {
+    fn from(fv: FieldValue) -> Self {
+        match fv {
+            FieldValue::Float(v) => serde_json::json!(v),
+            FieldValue::Integer(v) => serde_json::json!(v),
+            FieldValue::String(v) => serde_json::json!(v),
+            FieldValue::Boolean(v) => serde_json::json!(v),
+        }
+    }
+}
+
 /// 数据点 - Data Point
 ///
 /// 时序数据的基本单位，包含：

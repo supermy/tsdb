@@ -105,7 +105,8 @@ enum Commands {
 }
 
 /// 程序入口函数
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     // 解析命令行参数
     let cli = Cli::parse();
 
@@ -113,8 +114,8 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Start { config } => {
             let config = TsdbConfig::load_or_default(&config);
-            let mut server = tsdb_server::TsdbServer::new(config);
-            server.start()?;
+            let server = tsdb_server::TsdbServer::new(config);
+            server.start().await?;
         }
         Commands::Query { sql } => {
             let addr = format!("{}:{}", cli.host, cli.port);

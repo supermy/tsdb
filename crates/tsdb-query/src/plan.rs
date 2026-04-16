@@ -44,6 +44,7 @@ pub struct ExecutionPlan {
 /// 3. **含 SUM/AVG/MIN/MAX/COUNT** → `Aggregation`（聚合下推）
 ///
 /// TODO: 后续可扩展更复杂的规则（如基于统计信息的代价估算）。
+#[derive(Clone)]
 pub struct QueryPlanner;
 
 impl Default for QueryPlanner {

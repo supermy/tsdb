@@ -158,6 +158,12 @@ impl Default for SqlParser {
     }
 }
 
+impl Clone for SqlParser {
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
+
 impl SqlParser {
     pub fn new() -> Self {
         Self {

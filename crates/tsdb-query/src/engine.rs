@@ -50,6 +50,7 @@ pub enum QueryError {
 /// 封装了完整的查询生命周期管理：
 /// - 创建后即可反复调用 `execute()` 处理不同 SQL
 /// - 内部持有 SqlParser 和 QueryPlanner 实例，避免重复创建开销
+#[derive(Clone)]
 pub struct QueryEngine {
     /// SQL 解析器实例
     parser: SqlParser,
