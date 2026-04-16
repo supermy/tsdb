@@ -33,6 +33,7 @@
 //! ```
 //!
 
+use crate::bloom::BloomFilter;
 use crate::inverted::InvertedIndex;
 use crate::skiplist::SkipList;
 use std::collections::HashMap;
@@ -55,6 +56,7 @@ pub struct IndexManager {
     /// 下一个可分配的 SeriesId（全局自增，从 1 开始）
     next_series_id: SeriesId,
     /// 序列键缓存：(measurement + tags) → SeriesId，避免重复创建序列
+    series_bloom: BloomFilter,
     series_cache: HashMap<String, SeriesId>,
 }
 
@@ -85,7 +87,7 @@ impl IndexManager {
             .or_insert_with(|| {
                 let id = self.next_series_id;
                 self.next_series_id += 1;
-
+                self.series_bloom.insert(series_key.as_bytes());
                 let tag_index = self.tag_index.entry(measurement.to_string()).or_default();
                 let tag_pairs: Vec<(String, String)> =
                     tags.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -161,7 +163,10 @@ impl IndexManager {
         self.series_cache.get(series_key).copied()
     }
 
-    /// 获取指定 measurement 下已索引的序列数量
+    pub fn might_contain_series(&self, series_key: &str) -> bool {
+        self.series_bloom.might_contain(series_key.as_bytes())
+    }
+
     pub fn series_count(&self, measurement: &str) -> usize {
         self.tag_index
             .get(measurement)
@@ -237,6 +242,7 @@ impl Default for IndexManager {
             tag_index: HashMap::new(),
             next_series_id: 1,
             series_cache: HashMap::new(),
+            series_bloom: BloomFilter::new(100000),
         }
     }
 }

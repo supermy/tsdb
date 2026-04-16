@@ -32,6 +32,7 @@ use crate::delta::{DeltaDecoder, DeltaEncoder};
 use crate::dictionary::{DictionaryDecoder, DictionaryEncoder};
 use crate::error::{CompressError, CompressResult};
 use crate::gorilla::{GorillaDecoder, GorillaEncoder};
+use crate::simple8b::{Simple8bDecoder, Simple8bEncoder};
 use std::collections::HashMap;
 use tsdb_types::model::FieldValue;
 
@@ -66,8 +67,10 @@ pub struct CompressedBlock {
     pub timestamps: Vec<u8>,
     /// float 字段名 → Gorilla 编码后的二进制数据
     pub float_fields: HashMap<String, Vec<u8>>,
-    /// int/bool 字段名 → 原始或位打包后的二进制数据
+    /// int 字段名 → Simple8b 编码后的二进制数据
     pub int_fields: HashMap<String, Vec<u8>>,
+    /// bool 字段名 → 位打包后的二进制数据
+    pub bool_fields: HashMap<String, Vec<u8>>,
     /// string 字段名 → 字典 ID 序列的二进制数据
     pub string_fields: HashMap<String, Vec<u8>>,
     /// string 字段名 → 字典条目的二进制数据
@@ -112,6 +115,7 @@ impl Codec for BlockCodec {
 
         let mut float_fields = HashMap::new();
         let mut int_fields = HashMap::new();
+        let mut bool_fields = HashMap::new();
         let mut string_fields = HashMap::new();
         let mut dictionaries = HashMap::new();
 
@@ -131,13 +135,14 @@ impl Codec for BlockCodec {
                     float_fields.insert(field_name.clone(), encoder.finish());
                 }
                 FieldValue::Integer(_) => {
-                    let mut buf = Vec::new();
-                    for v in values {
-                        if let Some(i) = v.as_i64() {
-                            buf.extend_from_slice(&i.to_be_bytes());
-                        }
-                    }
-                    int_fields.insert(field_name.clone(), buf);
+                    let zigzag_values: Vec<u64> = values
+                        .iter()
+                        .filter_map(|v| v.as_i64())
+                        .map(|i| ((i << 1) ^ (i >> 63)) as u64)
+                        .collect();
+                    let mut encoder = Simple8bEncoder::new();
+                    encoder.encode(&zigzag_values)?;
+                    int_fields.insert(field_name.clone(), encoder.finish());
                 }
                 FieldValue::String(_) => {
                     let mut dict_encoder = DictionaryEncoder::new();
@@ -166,7 +171,7 @@ impl Codec for BlockCodec {
                             }
                         }
                     }
-                    int_fields.insert(field_name.clone(), buf);
+                    bool_fields.insert(field_name.clone(), buf);
                 }
             }
         }
@@ -175,6 +180,7 @@ impl Codec for BlockCodec {
             timestamps: ts_encoder.finish(),
             float_fields,
             int_fields,
+            bool_fields,
             string_fields,
             dictionaries,
             row_count: block.timestamps.len(),
@@ -205,21 +211,32 @@ impl Codec for BlockCodec {
         }
 
         for (field_name, data) in &compressed.int_fields {
-            if !compressed.dictionaries.contains_key(field_name) {
-                let chunk_size = 8;
-                let mut values = Vec::new();
-                for chunk in data.chunks(chunk_size) {
-                    if chunk.len() == 8 {
-                        let v = i64::from_be_bytes(
-                            chunk
-                                .try_into()
-                                .map_err(|_| CompressError::Decode("invalid int".into()))?,
-                        );
-                        values.push(FieldValue::Integer(v));
+            let decoder = Simple8bDecoder::new(data.clone())?;
+            let zigzag_values = decoder.decode_all()?;
+            let values: Vec<FieldValue> = zigzag_values
+                .into_iter()
+                .map(|n| {
+                    let i = ((n >> 1) as i64) ^ -((n & 1) as i64);
+                    FieldValue::Integer(i)
+                })
+                .collect();
+            fields.insert(field_name.clone(), values);
+        }
+
+        for (field_name, data) in &compressed.bool_fields {
+            let mut values = Vec::new();
+            for &byte in data {
+                for bit in 0..8u8 {
+                    values.push(FieldValue::Boolean(byte & (1 << bit) != 0));
+                    if values.len() >= compressed.row_count {
+                        break;
                     }
                 }
-                fields.insert(field_name.clone(), values);
+                if values.len() >= compressed.row_count {
+                    break;
+                }
             }
+            fields.insert(field_name.clone(), values);
         }
 
         for (field_name, data) in &compressed.string_fields {

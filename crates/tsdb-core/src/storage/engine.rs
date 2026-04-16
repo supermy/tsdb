@@ -530,6 +530,18 @@ impl StorageEngine {
         self.cf_manager.cleanup_expired_cfs()
     }
 
+    /// 手动刷新 WAL 缓冲区
+    ///
+    /// 当启用 `manual_wal_flush` 时，RocksDB 不会自动将 WAL 缓冲区
+    /// 刷写到磁盘。调用此方法可确保数据持久化。
+    ///
+    /// 建议在批量写入后调用，以平衡性能和数据安全性。
+    pub fn flush_wal(&self, sync: bool) -> Result<()> {
+        self.db
+            .flush_wal(sync)
+            .map_err(|e| TsdbError::Storage(format!("flush_wal failed: {}", e)))
+    }
+
     /// 压缩写入数据块
     ///
     /// 将 DataBlock 通过 BlockCodec 压缩后写入 RocksDB。

@@ -39,7 +39,9 @@ use crate::storage::merge_operand::{MergedBlock, MergedField};
 use chrono::NaiveDate;
 use rocksdb::MultiThreaded;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
 use tsdb_types::model::DataPoint;
 
 /// RocksDB 多线程实例的类型别名
@@ -227,8 +229,8 @@ impl BlockWriter {
         let value = block.encode();
 
         self.db
-            .put_cf(&cf, &key, &value)
-            .map_err(|e| TsdbError::Storage(format!("flush block failed: {}", e)))?;
+            .merge_cf(&cf, &key, &value)
+            .map_err(|e| TsdbError::Storage(format!("merge block failed: {}", e)))?;
 
         Ok(())
     }
@@ -258,5 +260,151 @@ mod tests {
         let config = BlockWriterConfig::default();
         assert_eq!(config.max_block_rows, 1024);
         assert!(config.compression_enabled);
+    }
+
+    #[test]
+    fn test_async_block_writer() {
+        use crate::storage::cf_manager::CfConfig;
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut opts = rocksdb::Options::default();
+        opts.create_if_missing(true);
+        opts.create_missing_column_families(true);
+        crate::storage::merge_operator::register_merge_operator(&mut opts);
+
+        let db: Arc<TsdbDB> = Arc::new(
+            TsdbDB::open_cf_with_opts(
+                &opts,
+                dir.path(),
+                ["default", "hot", "cold", "meta", "index"]
+                    .iter()
+                    .map(|name| (*name, opts.clone())),
+            )
+            .unwrap(),
+        );
+
+        let cf_manager = CfManager::new(db.clone(), CfConfig::default());
+        let config = BlockWriterConfig {
+            max_block_rows: 100,
+            flush_interval_ms: 100,
+            compression_enabled: true,
+        };
+
+        let writer = BlockWriter::new(db, cf_manager, config);
+        let mut async_writer = AsyncBlockWriter::new(Mutex::new(writer));
+
+        let mut tags = std::collections::BTreeMap::new();
+        tags.insert("host".to_string(), "server01".to_string());
+
+        let mut fields = std::collections::BTreeMap::new();
+        fields.insert(
+            "usage".to_string(),
+            tsdb_types::model::FieldValue::Float(0.5),
+        );
+
+        let dp = DataPoint {
+            measurement: "cpu".to_string(),
+            tags,
+            timestamp: 1_000_000_000,
+            fields,
+        };
+
+        async_writer.write(&dp).unwrap();
+        assert_eq!(async_writer.buffer_count(), 1);
+
+        async_writer.flush().unwrap();
+        assert_eq!(async_writer.buffer_count(), 0);
+
+        async_writer.stop().unwrap();
+    }
+}
+
+/// 异步块写入器 — 带后台定时 flush 线程的 Group Commit 实现
+///
+/// 对标 InfluxDB TSM 的异步写入模式：
+/// - 写入线程只负责将数据点缓冲到内存
+/// - 后台线程按固定间隔自动 flush 缓冲区
+/// - 攒够 N 条或 T 毫秒后自动提交
+///
+/// ## 使用模式
+///
+/// ```ignore
+/// let async_writer = AsyncBlockWriter::new(Mutex::new(writer));
+///
+/// // 写入数据（非阻塞）
+/// async_writer.write(&data_point)?;
+///
+/// // 停止后台线程（会自动 flush 剩余数据）
+/// async_writer.stop()?;
+/// ```
+pub struct AsyncBlockWriter {
+    inner: Arc<Mutex<BlockWriter>>,
+    stop_flag: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl AsyncBlockWriter {
+    pub fn new(writer: Mutex<BlockWriter>) -> Self {
+        let inner = Arc::new(writer);
+        let stop_flag = Arc::new(AtomicBool::new(false));
+
+        let inner_clone = inner.clone();
+        let stop_clone = stop_flag.clone();
+        let flush_interval = {
+            let guard = inner.lock().unwrap();
+            guard.config.flush_interval_ms
+        };
+
+        let handle = thread::Builder::new()
+            .name("tsdb-block-writer-flush".to_string())
+            .spawn(move || {
+                while !stop_clone.load(Ordering::Relaxed) {
+                    thread::sleep(std::time::Duration::from_millis(flush_interval));
+                    if let Ok(mut guard) = inner_clone.lock() {
+                        let _ = guard.flush_all();
+                    }
+                }
+                if let Ok(mut guard) = inner_clone.lock() {
+                    let _ = guard.flush_all();
+                }
+            })
+            .expect("failed to spawn block writer flush thread");
+
+        Self {
+            inner,
+            stop_flag,
+            handle: Some(handle),
+        }
+    }
+
+    pub fn write(&self, dp: &DataPoint) -> Result<bool> {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        guard.write(dp)
+    }
+
+    pub fn flush(&self) -> Result<usize> {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        guard.flush_all()
+    }
+
+    pub fn buffer_count(&self) -> usize {
+        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        guard.buffer_count()
+    }
+
+    pub fn stop(&mut self) -> Result<()> {
+        self.stop_flag.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.handle.take() {
+            handle
+                .join()
+                .map_err(|_| TsdbError::Storage("flush thread join failed".into()))?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for AsyncBlockWriter {
+    fn drop(&mut self) {
+        let _ = self.stop();
     }
 }

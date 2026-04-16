@@ -15,7 +15,8 @@
 //! | 元数据 | 小 buffer | 数据量小，快速持久化 |
 
 use rocksdb::{
-    BlockBasedIndexType, BlockBasedOptions, DataBlockIndexType, Options, WriteBufferManager,
+    BlockBasedIndexType, BlockBasedOptions, DBRecoveryMode, DataBlockIndexType, Options,
+    WriteBufferManager,
 };
 
 /// TSDB RocksDB 选项工厂
@@ -107,6 +108,15 @@ impl TsdbOptions {
         crate::storage::merge_operator::register_merge_operator(&mut opts);
 
         crate::storage::comparator::register_comparator(&mut opts);
+
+        // WAL 异步写入优化 (对标 InfluxDB TSM 异步 WAL)
+        // - set_use_fsync(false): 使用 fdatasync 替代 fsync，跳过元数据更新
+        // - PointInTime 恢复模式: 允许恢复到最后一致点，而非绝对一致
+        // - manual_wal_flush: 延迟 WAL 刷盘，攒够后批量 sync
+        // 预期效果: 写入吞吐提升 2x
+        opts.set_use_fsync(false);
+        opts.set_wal_recovery_mode(DBRecoveryMode::PointInTime);
+        opts.set_manual_wal_flush(true);
 
         opts
     }
