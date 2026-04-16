@@ -20,7 +20,7 @@ pub fn tsdb_compare(a: &[u8], b: &[u8]) -> Ordering {
     let a_parts = split_rowkey(a);
     let b_parts = split_rowkey(b);
 
-    match a_parts.measurement.cmp(&b_parts.measurement) {
+    match a_parts.measurement.cmp(b_parts.measurement) {
         Ordering::Equal => {}
         ord => return ord,
     }

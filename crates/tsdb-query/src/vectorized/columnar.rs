@@ -56,6 +56,12 @@ pub struct ColumnarBatch {
     pub row_count: usize,
 }
 
+impl Default for ColumnarBatch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ColumnarBatch {
     pub fn new() -> Self {
         Self {

@@ -57,10 +57,13 @@ pub struct QueryEngine {
     planner: QueryPlanner,
 }
 
+impl Default for QueryEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QueryEngine {
-    /// 创建新的查询引擎实例
-    ///
-    /// 内部初始化 SqlParser 和 QueryPlanner。
     pub fn new() -> Self {
         Self {
             parser: SqlParser::new(),
@@ -137,7 +140,7 @@ impl QueryEngine {
         let mut rows = Vec::with_capacity(data_points.len());
 
         for dp in &data_points {
-            if !self.match_filters(&dp, &query) {
+            if !self.match_filters(dp, query) {
                 continue;
             }
 
@@ -183,7 +186,7 @@ impl QueryEngine {
 
         let mut rows = Vec::new();
         for dp in &data_points {
-            if !self.match_filters(&dp, query) {
+            if !self.match_filters(dp, query) {
                 continue;
             }
             let mut row = vec![FieldValue::Integer(dp.timestamp)];
@@ -225,26 +228,23 @@ impl QueryEngine {
         let mut rows = Vec::new();
 
         for select_field in &query.select_fields {
-            match select_field {
-                SelectField::Aggregate { func, field, alias } => {
-                    let label = alias.clone().unwrap_or_else(|| format!("{}({})", func, field));
-                    columns.push(label.clone());
+            if let SelectField::Aggregate { func, field, alias } = select_field {
+                let label = alias.clone().unwrap_or_else(|| format!("{}({})", func, field));
+                columns.push(label.clone());
 
-                    let simd_func = match func {
-                        AggFunc::Sum => crate::vectorized::simd_agg::SimdAggFunc::Sum,
-                        AggFunc::Avg => crate::vectorized::simd_agg::SimdAggFunc::Avg,
-                        AggFunc::Min => crate::vectorized::simd_agg::SimdAggFunc::Min,
-                        AggFunc::Max => crate::vectorized::simd_agg::SimdAggFunc::Max,
-                        AggFunc::Count => crate::vectorized::simd_agg::SimdAggFunc::Count,
-                        _ => crate::vectorized::simd_agg::SimdAggFunc::Avg,
-                    };
+                let simd_func = match func {
+                    AggFunc::Sum => crate::vectorized::simd_agg::SimdAggFunc::Sum,
+                    AggFunc::Avg => crate::vectorized::simd_agg::SimdAggFunc::Avg,
+                    AggFunc::Min => crate::vectorized::simd_agg::SimdAggFunc::Min,
+                    AggFunc::Max => crate::vectorized::simd_agg::SimdAggFunc::Max,
+                    AggFunc::Count => crate::vectorized::simd_agg::SimdAggFunc::Count,
+                    _ => crate::vectorized::simd_agg::SimdAggFunc::Avg,
+                };
 
-                    let value = crate::vectorized::VectorizedEngine::execute_aggregate(&batch, field, simd_func)
-                        .unwrap_or(FieldValue::Float(f64::NAN));
+                let value = crate::vectorized::VectorizedEngine::execute_aggregate(&batch, field, simd_func)
+                    .unwrap_or(FieldValue::Float(f64::NAN));
 
-                    rows.push(vec![value]);
-                }
-                _ => {}
+                rows.push(vec![value]);
             }
         }
 
@@ -256,13 +256,9 @@ impl QueryEngine {
     /// 对每个 tag filter 执行精确匹配（当前仅支持 Eq 操作符）。
     fn match_filters(&self, dp: &DataPoint, query: &ParsedQuery) -> bool {
         if let Some(where_clause) = &query.where_clause {
-            for (key, value, op) in &where_clause.tag_filters {
-                match op {
-                    _ => {
-                        if dp.tags.get(key.as_str()).map(|v| v != value).unwrap_or(true) {
-                            return false;
-                        }
-                    }
+            for (key, value, _op) in &where_clause.tag_filters {
+                if dp.tags.get(key.as_str()).map(|v| v != value).unwrap_or(true) {
+                    return false;
                 }
             }
         }

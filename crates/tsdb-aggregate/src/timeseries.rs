@@ -28,6 +28,7 @@ impl TimeseriesGenerator {
     /// - `end_ts`: 结束时间戳（微秒）
     /// - `chart_type`: 图表类型
     /// - `title`: 图表标题
+    #[allow(clippy::too_many_arguments)]
     pub fn generate_trend(
         store: &AggregationStore,
         _business: &str,

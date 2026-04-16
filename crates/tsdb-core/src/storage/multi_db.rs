@@ -221,10 +221,10 @@ mod tests {
         let cf_config = CfConfig::default();
         let manager = MultiDbManager::new(dir.path().to_path_buf(), cf_config);
 
-        let engine = manager.ensure_default().unwrap();
+        let _engine = manager.ensure_default().unwrap();
         assert!(manager.list_databases().contains(&"default".to_string()));
 
-        let engine2 = manager.ensure_default().unwrap();
+        let _engine2 = manager.ensure_default().unwrap();
         assert_eq!(manager.database_count(), 1);
     }
 

@@ -35,23 +35,16 @@ use crate::error::{CompressError, CompressResult};
 /// 调用 `finish()` 后返回两部分数据：
 /// 1. **encoded**: 字典条目 + ID 序列的二进制数据
 /// 2. **dictionary**: 完整的映射表（用于构造 Decoder）
+#[derive(Default)]
 pub struct DictionaryEncoder {
-    /// 字符串 → ID 的正向映射表
     dictionary: HashMap<String, u32>,
-    /// 下一个可分配的 ID（从 0 开始递增）
     next_id: u32,
-    /// 累积输出的二进制数据（字典条目按顺序追加）
     encoded: Vec<u8>,
 }
 
 impl DictionaryEncoder {
-    /// 创建新的字典编码器实例
     pub fn new() -> Self {
-        Self {
-            dictionary: HashMap::new(),
-            next_id: 0,
-            encoded: Vec::new(),
-        }
+        Self::default()
     }
 
     /// 对单个字符串进行字典编码
@@ -191,6 +184,7 @@ mod tests {
         assert_ne!(id1, id2);
 
         let (encoded, dict) = encoder.finish();
+        let _ = encoded;
 
         let mut reverse_dict: HashMap<u32, String> = HashMap::new();
         for (k, v) in dict {
@@ -212,6 +206,7 @@ mod tests {
         let (encoded, _) = encoder.finish();
 
         let (decoder, consumed) = DictionaryDecoder::from_encoded(&encoded).unwrap();
+        let _ = decoder;
         assert_eq!(consumed, encoded.len());
     }
 }

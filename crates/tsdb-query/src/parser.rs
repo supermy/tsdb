@@ -148,8 +148,13 @@ pub struct SqlParser {
     dialect: GenericDialect,
 }
 
+impl Default for SqlParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SqlParser {
-    /// 创建新的 SQL 解析器实例
     pub fn new() -> Self {
         Self {
             dialect: GenericDialect {},
@@ -185,7 +190,7 @@ impl SqlParser {
         let body = &query.body;
         match body.as_ref() {
             SetExpr::Select(select) => {
-                let measurement = select.from.get(0)
+                let measurement = select.from.first()
                     .map(|t| t.relation.to_string())
                     .ok_or_else(|| ParseError::InvalidMeasurement("no table specified".into()))?;
 
@@ -314,20 +319,17 @@ impl SqlParser {
         time_range: &mut Option<(i64, i64)>,
         tag_filters: &mut Vec<(String, String, FilterOp)>,
     ) -> Result<(), ParseError> {
-        match expr {
-            Expr::BinaryOp { left, op, right } => {
-                match op {
-                    BinaryOperator::And => {
-                        self.extract_filters(left, time_range, tag_filters)?;
-                        self.extract_filters(right, time_range, tag_filters)?;
-                    }
-                    BinaryOperator::Eq => {
-                        self.extract_comparison(left, right, FilterOp::Eq, time_range, tag_filters)?;
-                    }
-                    _ => {}
+        if let Expr::BinaryOp { left, op, right } = expr {
+            match op {
+                BinaryOperator::And => {
+                    self.extract_filters(left, time_range, tag_filters)?;
+                    self.extract_filters(right, time_range, tag_filters)?;
                 }
+                BinaryOperator::Eq => {
+                    self.extract_comparison(left, right, FilterOp::Eq, time_range, tag_filters)?;
+                }
+                _ => {}
             }
-            _ => {}
         }
         Ok(())
     }

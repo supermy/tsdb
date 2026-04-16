@@ -43,7 +43,7 @@ impl AggregationStore {
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
 
-        let cfs = vec!["hour", "day", "week", "month"];
+        let cfs = ["hour", "day", "week", "month"];
         let cf_descriptors: Vec<rocksdb::ColumnFamilyDescriptor> = cfs.iter()
             .map(|&name| {
                 let mut cf_opts = Options::default();
@@ -191,7 +191,7 @@ mod tests {
         let result = AggregationResult {
             measurement: "cpu".to_string(),
             dimension: TimeDimension::Hour,
-            window_start: 1713158400_000000,
+            window_start: 1_713_158_400_000_000,
             values: {
                 let mut m = HashMap::new();
                 m.insert("usage".to_string(), 78.5);
@@ -233,9 +233,9 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let manager = AggregationStoreManager::new(dir.path().to_path_buf());
 
-        let s1 = manager.get_store("stocks").unwrap();
-        let s2 = manager.get_store("iot").unwrap();
-        let s1_again = manager.get_store("stocks").unwrap();
+        let _s1 = manager.get_store("stocks").unwrap();
+        let _s2 = manager.get_store("iot").unwrap();
+        let _s1_again = manager.get_store("stocks").unwrap();
 
         assert_eq!(manager.list_businesses().len(), 2);
     }

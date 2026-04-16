@@ -87,7 +87,7 @@ impl LightAggregationPipeline {
             let mut aggregators = self.aggregators.lock().unwrap();
             aggregators
                 .entry(bucket_key.clone())
-                .or_insert_with(Aggregator::new)
+                .or_default()
                 .accumulate(dp);
         }
 
@@ -207,7 +207,7 @@ mod tests {
         };
         let pipeline = LightAggregationPipeline::new(config, store_mgr);
 
-        let mut dp = DataPoint::new("mem", 1713158400_000000);
+        let mut dp = DataPoint::new("mem", 1_713_158_400_000_000);
         dp.fields.insert("used".to_string(), tsdb_types::model::FieldValue::Float(60.0));
         pipeline.on_write("iot", &dp);
 

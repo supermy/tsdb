@@ -345,7 +345,6 @@ pub fn timestamp_to_cf_name(timestamp_micros: Timestamp) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tsdb_types::model::FieldValue;
     use std::collections::BTreeMap;
 
     /// 测试块对齐
@@ -401,7 +400,7 @@ mod tests {
     /// 测试 CF 名称生成
     #[test]
     fn test_cf_name() {
-        let ts = 1704067200_000_000i64;
+        let ts = 1_704_067_200_000_000_i64;
         let name = timestamp_to_cf_name(ts);
         assert!(name.starts_with("data_"));
     }

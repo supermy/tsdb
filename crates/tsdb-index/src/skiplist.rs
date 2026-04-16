@@ -175,9 +175,9 @@ impl SkipList {
         };
 
         // 更新各层指针
-        for level in 0..new_level {
-            new_node.forward[level] = self.nodes[update[level]].forward[level];
-            self.nodes[update[level]].forward[level] = Some(new_idx);
+        for (level, update_idx) in update.iter().enumerate().take(new_level) {
+            new_node.forward[level] = self.nodes[*update_idx].forward[level];
+            self.nodes[*update_idx].forward[level] = Some(new_idx);
         }
 
         self.nodes.push(new_node);
@@ -353,7 +353,7 @@ impl SkipList {
         self.rng_state = self.rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
 
         // 以 25% 概率提升层数
-        while level < self.max_level && (self.rng_state >> 33) % 4 == 0 {
+        while level < self.max_level && (self.rng_state >> 33).is_multiple_of(4) {
             level += 1;
         }
 

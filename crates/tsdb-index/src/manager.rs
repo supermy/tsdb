@@ -59,35 +59,10 @@ pub struct IndexManager {
 }
 
 impl IndexManager {
-    /// 创建新的索引管理器实例
-    ///
-    /// 所有内部状态初始化为空。
     pub fn new() -> Self {
-        Self {
-            time_index: HashMap::new(),
-            tag_index: HashMap::new(),
-            next_series_id: 1,
-            series_cache: HashMap::new(),
-        }
+        Self::default()
     }
 
-    /// 对单个数据点建立索引（写入路径调用）
-    ///
-    /// 处理步骤：
-    /// 1. 根据 measurement + tags 构建 **series_key**（唯一标识一个时间序列）
-    /// 2. 在 `series_cache` 中查找：
-    ///    - **命中**：直接返回已有 SeriesId
-    ///    - **未命中**：分配新 Id，更新 `tag_index`（倒排索引）
-    /// 3. 将 (timestamp, block_offset) 插入 `time_index`（跳表时间索引）
-    ///
-    /// # 参数
-    /// - `measurement`: 指标名称（如 `"cpu"`, `"memory"`）
-    /// - `tags`: 该数据点的标签集合（BTreeMap 保证排序一致性）
-    /// - `timestamp`: 微秒级时间戳
-    /// - `block_offset`: 数据块在存储中的偏移位置
-    ///
-    /// # 返回
-    /// 该数据点所属的 SeriesId
     pub fn index_data_point(
         &mut self,
         measurement: &str,
@@ -106,7 +81,7 @@ impl IndexManager {
 
                 let tag_index = self.tag_index
                     .entry(measurement.to_string())
-                    .or_insert_with(InvertedIndex::new);
+                    .or_default();
                 let tag_pairs: Vec<(String, String)> = tags.iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
@@ -238,13 +213,22 @@ impl IndexManager {
                 self.tag_index.insert(measurement.to_string(), idx);
                 return true;
             }
-        } else if key == "index:meta:next_series_id" {
-            if data.len() >= 8 {
-                self.next_series_id = u64::from_le_bytes(data[0..8].try_into().unwrap_or([0; 8]));
-                return true;
-            }
+        } else if key == "index:meta:next_series_id" && data.len() >= 8 {
+            self.next_series_id = u64::from_le_bytes(data[0..8].try_into().unwrap_or([0; 8]));
+            return true;
         }
         false
+    }
+}
+
+impl Default for IndexManager {
+    fn default() -> Self {
+        Self {
+            time_index: HashMap::new(),
+            tag_index: HashMap::new(),
+            next_series_id: 1,
+            series_cache: HashMap::new(),
+        }
     }
 }
 

@@ -46,44 +46,26 @@ const BITS_PER_BYTE: u8 = 8;
 /// 创建编码器后逐个调用 encode() 压缩浮点值，
 /// 最后调用 finish() 获取压缩后的二进制数据。
 ///
+#[derive(Default)]
 pub struct GorillaEncoder {
-    /// 上一个值的 IEEE 754 位表示（用于计算 XOR）
     last_value: u64,
-    /// 上一次 XOR 结果的前导零位数（用于复用优化）
     last_leading_zeros: u8,
-    /// 上一次 XOR 结果的后导零位数（用于复用优化）
     last_trailing_zeros: u8,
-    /// 是否已写入首个值（首个值需要完整 64 位存储）
     initialized: bool,
-    /// 已编码的浮点值数量
     count: u32,
-    /// 输出字节缓冲区（累积写入的完整字节）
     buf: Vec<u8>,
-    /// 当前正在组装的字节（位写入的目标）
     current_byte: u8,
-    /// 当前字节中已使用的位数（0~7）
     bits_used: u8,
 }
 
 impl GorillaEncoder {
-    /// 创建新的 Gorilla 编码器实例
-    ///
-    /// 所有内部状态初始化为 0/false，首次 encode() 会触发特殊的首值处理路径。
     pub fn new() -> Self {
-        Self {
-            last_value: 0,
-            last_leading_zeros: 0,
-            last_trailing_zeros: 0,
-            initialized: false,
-            count: 0,
-            buf: Vec::new(),
-            current_byte: 0,
-            bits_used: 0,
-        }
+        Self::default()
     }
+}
 
+impl GorillaEncoder {
     /// 编码单个 f64 浮点值到位流中
-    ///
     /// ## 编码逻辑
     ///
     /// 1. **首个值**：直接写入完整的 64 位 IEEE 754 表示
@@ -406,7 +388,7 @@ mod tests {
 
     #[test]
     fn test_gorilla_constant_values() {
-        let values = vec![3.14; 100];
+        let values = vec![std::f64::consts::PI; 100];
         let mut encoder = GorillaEncoder::new();
         for &v in &values {
             encoder.encode(v).unwrap();
@@ -417,7 +399,7 @@ mod tests {
         let decoded = decoder.decode_all().unwrap();
         assert_eq!(decoded.len(), values.len());
         for v in &decoded {
-            assert!((v - 3.14).abs() < f64::EPSILON);
+            assert!((v - std::f64::consts::PI).abs() < f64::EPSILON);
         }
     }
 

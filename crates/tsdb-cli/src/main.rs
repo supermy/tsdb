@@ -159,7 +159,7 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
     // 打开文件并创建缓冲读取器
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);
-    let addr = format!("127.0.0.1:7878");
+    let addr = "127.0.0.1:7878".to_string();
 
     let mut total = 0u64;
     let mut batch = Vec::new();
@@ -224,7 +224,7 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
                 }
             }
             // 显示进度
-            if total % 10000 == 0 {
+            if total.is_multiple_of(10000) {
                 let elapsed = start.elapsed().as_secs_f64();
                 let throughput = total as f64 / elapsed;
                 eprint!("\rLoaded {} points ({:.0} pts/sec)", total, throughput);

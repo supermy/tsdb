@@ -61,7 +61,7 @@ fn main() -> anyhow::Result<()> {
 
 /// 生成 TSBS DevOps 风格的合成数据点
 fn generate_devops_points(device_count: usize, interval_secs: i64, duration_hours: i64) -> Vec<DataPoint> {
-    let base_ts: i64 = 1704067200_000_000;
+    let base_ts: i64 = 1_704_067_200_000_000;
     let points_per_device = (duration_hours * 3600) / interval_secs;
     let mut points = Vec::with_capacity(device_count * points_per_device as usize);
 
@@ -74,16 +74,15 @@ fn generate_devops_points(device_count: usize, interval_secs: i64, duration_hour
             dp.tags.insert("datacenter".to_string(), format!("dc_{}", device_id % 3));
             dp.tags.insert("rack".to_string(), format!("rack_{}", device_id % 10));
 
-            // 模拟 9 个 CPU 指标（与 TSBS DevOps 一致）
-            dp.fields.insert("usage_user".to_string(), FieldValue::Float((device_id as f64 * 0.3 + (point_idx as f64 * 0.01).sin() * 20.0 + 30.0).min(100.0).max(0.0)));
-            dp.fields.insert("usage_system".to_string(), FieldValue::Float((device_id as f64 * 0.1 + (point_idx as f64 * 0.02).cos() * 10.0 + 10.0).min(100.0).max(0.0)));
-            dp.fields.insert("usage_idle".to_string(), FieldValue::Float((60.0 + (point_idx as f64 * 0.005).sin() * 15.0).min(100.0).max(0.0)));
+            dp.fields.insert("usage_user".to_string(), FieldValue::Float((device_id as f64 * 0.3 + (point_idx as f64 * 0.01).sin() * 20.0 + 30.0).clamp(0.0, 100.0)));
+            dp.fields.insert("usage_system".to_string(), FieldValue::Float((device_id as f64 * 0.1 + (point_idx as f64 * 0.02).cos() * 10.0 + 10.0).clamp(0.0, 100.0)));
+            dp.fields.insert("usage_idle".to_string(), FieldValue::Float((60.0 + (point_idx as f64 * 0.005).sin() * 15.0).clamp(0.0, 100.0)));
             dp.fields.insert("usage_nice".to_string(), FieldValue::Float(device_id as f64 * 0.05 % 5.0));
             dp.fields.insert("usage_iowait".to_string(), FieldValue::Float(device_id as f64 * 0.02 % 3.0));
             dp.fields.insert("usage_steal".to_string(), FieldValue::Float(device_id as f64 * 0.01 % 2.0));
             dp.fields.insert("usage_guest".to_string(), FieldValue::Float(device_id as f64 * 0.005 % 1.0));
             dp.fields.insert("usage_guest_nice".to_string(), FieldValue::Float(0.1));
-            dp.fields.insert("count".to_string(), FieldValue::Integer(point_idx as i64));
+            dp.fields.insert("count".to_string(), FieldValue::Integer(point_idx));
 
             points.push(dp);
         }
@@ -153,7 +152,7 @@ fn bench_query_latency(engine: &StorageEngine) -> anyhow::Result<()> {
     println!("│  2. 查询延迟测试                                              │");
     println!("└──────────────────────────────────────────────────────────────┘\n");
 
-    let base_ts: i64 = 1704067200_000_000;
+    let base_ts: i64 = 1_704_067_200_000_000;
 
     // 2a. 短范围查询 (1分钟)
     let start = Instant::now();
@@ -203,7 +202,7 @@ fn bench_compression() -> anyhow::Result<()> {
     let n = 10000;
 
     // 3a. Delta 时间戳压缩
-    let timestamps: Vec<i64> = (0..n).map(|i| 1704067200_000_000 + i as i64 * 10_000_000).collect();
+    let timestamps: Vec<i64> = (0..n).map(|i| 1_704_067_200_000_000 + i as i64 * 10_000_000).collect();
     let raw_ts_size = timestamps.len() * 8;
     let mut delta_enc = DeltaEncoder::new();
     for &ts in &timestamps { delta_enc.encode(ts)?; }
@@ -261,7 +260,7 @@ fn bench_vectorized_vs_scalar(engine: &StorageEngine) -> anyhow::Result<()> {
     println!("│  4. 向量化 vs 标量聚合对比                                     │");
     println!("└──────────────────────────────────────────────────────────────┘\n");
 
-    let base_ts: i64 = 1704067200_000_000;
+    let base_ts: i64 = 1_704_067_200_000_000;
     let results = engine.read_range("cpu", &Tags::new(), base_ts, base_ts + 3_600_000_000)?;
     if results.is_empty() {
         println!("  (无数据，跳过)");
@@ -432,7 +431,7 @@ fn bench_index_performance() -> anyhow::Result<()> {
     for i in 0..n {
         let mut tags = BTreeMap::new();
         tags.insert("host".to_string(), format!("host_{}", i % 100));
-        idx_mgr.index_data_point("cpu", &tags, 1704067200_000_000 + i as i64 * 10_000_000, i as u64);
+        idx_mgr.index_data_point("cpu", &tags, 1_704_067_200_000_000 + i as i64 * 10_000_000, i as u64);
     }
     let idx_time = start.elapsed();
     println!("  IndexManager索引: {} 点, {:.2}ms", n, idx_time.as_secs_f64() * 1000.0);

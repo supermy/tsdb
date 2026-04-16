@@ -46,8 +46,13 @@ pub struct ExecutionPlan {
 /// TODO: 后续可扩展更复杂的规则（如基于统计信息的代价估算）。
 pub struct QueryPlanner;
 
+impl Default for QueryPlanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QueryPlanner {
-    /// 创建新的查询规划器实例（无状态对象）
     pub fn new() -> Self { Self }
 
     /// 根据解析后的查询生成执行计划

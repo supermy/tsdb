@@ -108,8 +108,13 @@ pub struct Aggregator {
     buckets: HashMap<String, (HashMap<String, f64>, usize)>,
 }
 
+impl Default for Aggregator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Aggregator {
-    /// 创建新的聚合器实例
     pub fn new() -> Self {
         Self { buckets: HashMap::new() }
     }
@@ -197,18 +202,18 @@ mod tests {
 
     #[test]
     fn test_time_dimension_align() {
-        assert_eq!(TimeDimension::Day.align_timestamp(1713158400_000000), 1713139200_000000);
+        assert_eq!(TimeDimension::Day.align_timestamp(1_713_158_400_000_000), 1_713_139_200_000_000);
     }
 
     #[test]
     fn test_aggregator_accumulate_and_finalize() {
         let mut agg = Aggregator::new();
 
-        let mut dp1 = DataPoint::new("cpu", 1713158400_000000);
+        let mut dp1 = DataPoint::new("cpu", 1_713_158_400_000_000);
         dp1.fields.insert("usage".to_string(), tsdb_types::model::FieldValue::Float(10.0));
         agg.accumulate(&dp1);
 
-        let mut dp2 = DataPoint::new("cpu", 1713158500_000000);
+        let mut dp2 = DataPoint::new("cpu", 1_713_158_500_000_000);
         dp2.fields.insert("usage".to_string(), tsdb_types::model::FieldValue::Float(20.0));
         agg.accumulate(&dp2);
 

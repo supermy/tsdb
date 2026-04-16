@@ -114,8 +114,7 @@ pub struct HookManager {
 impl HookManager {
     pub fn new() -> Self {
         let metrics = StorageMetrics::new();
-        let mut hooks: Vec<Box<dyn StorageHook>> = Vec::new();
-        hooks.push(Box::new(MetricsCollectingHook::new(metrics.clone())));
+        let hooks: Vec<Box<dyn StorageHook>> = vec![Box::new(MetricsCollectingHook::new(metrics.clone()))];
         Self { hooks, metrics }
     }
 
@@ -190,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_hook_manager() {
-        let mut mgr = HookManager::new();
+        let mgr = HookManager::new();
         let metrics = mgr.metrics();
 
         mgr.fire_flush_complete("hot_2024_01_01", 4096);

@@ -46,7 +46,7 @@ fn handle_http_request(stream: &mut std::net::TcpStream, db: &Arc<StorageEngine>
             http_response(200, &format!(r#"{{"databases":{}}}"#, serde_json::to_string(&dbs).unwrap_or_default()))
         }
         ("POST", p) if p.starts_with("/api/v1/databases") => {
-            match db_manager.create_database(&body.trim_matches('"')) {
+            match db_manager.create_database(body.trim_matches('"')) {
                 Ok(_) => http_response(201, r#"{"status":"created"}"#),
                 Err(e) => http_response(500, &format!(r#"{{"error":"{}"}}"#, e)),
             }
@@ -259,7 +259,7 @@ fn handle_timeseries(body: &str) -> Result<String> {
     let agg_dir = std::path::Path::new(&data_dir).join("aggregation");
 
     let store = tsdb_aggregate::store::AggregationStore::open(&agg_dir, business)
-        .map_err(|e| TsdbError::Storage(e))?;
+        .map_err(TsdbError::Storage)?;
 
     let dim = tsdb_aggregate::aggregator::TimeDimension::from_name(dimension);
     let ct = match chart_type {
@@ -270,7 +270,7 @@ fn handle_timeseries(body: &str) -> Result<String> {
 
     tsdb_aggregate::TimeseriesGenerator::generate_trend(
         &store, business, measurement, dim, start_ts, end_ts, ct, title,
-    ).map_err(|e| TsdbError::Storage(e))
+    ).map_err(TsdbError::Storage)
 }
 
 fn handle_performance_dashboard() -> Result<String> {

@@ -113,8 +113,13 @@ pub struct TimestampRecord {
     pub bytes_read: u64,
 }
 
+impl Default for PerformanceDashboard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PerformanceDashboard {
-    /// 创建新的空性能仪表盘
     pub fn new() -> Self {
         Self { system_metrics: None, gauges: Vec::new(), history: Vec::new() }
     }
@@ -153,9 +158,7 @@ impl PerformanceDashboard {
             }));
         }
 
-        let sys_json = if let Some(sys) = &self.system_metrics {
-            Some(serde_json::json!({ "cpu_usage": sys.cpu_usage, "memory_usage_mb": sys.memory_usage_mb, "disk_usage_gb": sys.disk_usage_gb, "active_connections": sys.active_connections, "write_ops_per_sec": sys.write_ops_per_sec, "read_ops_per_sec": sys.read_ops_per_sec, "query_latency_ms": sys.query_latency_ms, "compression_ratio": sys.compression_ratio }))
-        } else { None };
+        let sys_json = self.system_metrics.as_ref().map(|sys| serde_json::json!({ "cpu_usage": sys.cpu_usage, "memory_usage_mb": sys.memory_usage_mb, "disk_usage_gb": sys.disk_usage_gb, "active_connections": sys.active_connections, "write_ops_per_sec": sys.write_ops_per_sec, "read_ops_per_sec": sys.read_ops_per_sec, "query_latency_ms": sys.query_latency_ms, "compression_ratio": sys.compression_ratio }));
 
         serde_json::json!({ "type": "performance_dashboard", "gauges": gauges_json, "system": sys_json, "history_records": self.history.len() })
     }

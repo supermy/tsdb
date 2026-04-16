@@ -48,34 +48,23 @@ use crate::error::{CompressError, CompressResult};
 /// encoder.encode(1060)?;
 /// let compressed = encoder.finish();
 /// ```
+#[derive(Default)]
 pub struct DeltaEncoder {
-    /// 第一个时间戳（原始值存储）
     first_timestamp: i64,
-    /// 上一个时间戳
     last_timestamp: i64,
-    /// 上一个 Delta 值
     last_delta: i64,
-    /// 是否已初始化
     initialized: bool,
-    /// 编码后的数据
     encoded: Vec<u8>,
 }
 
 impl DeltaEncoder {
-    /// 创建新的编码器
     pub fn new() -> Self {
-        Self {
-            first_timestamp: 0,
-            last_timestamp: 0,
-            last_delta: 0,
-            initialized: false,
-            encoded: Vec::new(),
-        }
+        Self::default()
     }
+}
 
+impl DeltaEncoder {
     /// 编码单个时间戳
-    ///
-    /// # 参数
     ///
     /// - `timestamp`: 时间戳（微秒）
     ///

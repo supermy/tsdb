@@ -49,38 +49,24 @@ use tsdb_types::model::SeriesId;
 /// ## 线程安全
 ///
 /// 当前实现非线程安全，需在调用方加锁保护（或后续升级为 RwLock）。
+#[derive(Default)]
 pub struct InvertedIndex {
-    /// 倒排列表：`tag_key=tag_value` → 匹配的 SeriesId 位图
     postings: HashMap<String, RoaringBitmap>,
-    /// 反向映射：SeriesId → 该序列的所有 Tag 对（用于删除时精确清理）
     series_tags: HashMap<SeriesId, Vec<(String, String)>>,
 }
 
 impl InvertedIndex {
-    /// 创建新的空倒排索引实例
     pub fn new() -> Self {
-        Self {
-            postings: HashMap::new(),
-            series_tags: HashMap::new(),
-        }
+        Self::default()
     }
 
-    /// 向索引中添加一个新时间序列及其标签
-    ///
-    /// 为该序列的每个 (key, value) 标签对创建倒排条目：
-    /// - 在 `postings` 中将 series_id 加入对应 tag 的 RoaringBitmap
-    /// - 在 `series_tags` 中记录该序列的所有标签（用于后续删除）
-    ///
-    /// # 参数
-    /// - `series_id`: 时间序列的唯一标识符
-    /// - `tags`: 该序列的标签键值对列表
     pub fn add_series(&mut self, series_id: SeriesId, tags: &[(String, String)]) {
         self.series_tags.insert(series_id, tags.to_vec());
         for (key, value) in tags {
             let posting_key = format!("{}={}", key, value);
             self.postings
                 .entry(posting_key)
-                .or_insert_with(RoaringBitmap::new)
+                .or_default()
                 .insert(series_id as u32);
         }
     }

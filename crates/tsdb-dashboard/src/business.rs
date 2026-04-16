@@ -59,8 +59,13 @@ pub struct BusinessDashboard {
     pub measurements: Vec<String>,
 }
 
+impl Default for BusinessDashboard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BusinessDashboard {
-    /// 创建新的空业务仪表盘
     pub fn new() -> Self {
         Self { metrics: Vec::new(), total_points: 0, measurements: Vec::new() }
     }
@@ -191,7 +196,7 @@ mod tests {
 
         let dash = BusinessDashboard::from_data_points(&dps);
         assert_eq!(dash.total_points, 5);
-        assert!(dash.summary_json()["metrics"].as_array().unwrap().len() > 0);
+        assert!(!dash.summary_json()["metrics"].as_array().unwrap().is_empty());
 
         let json = dash.summary_json();
         assert_eq!(json["type"], "business_dashboard");

@@ -920,7 +920,7 @@ mod tests {
     #[test]
     fn test_field_value_encode_decode() {
         let cases = vec![
-            FieldValue::Float(3.14),
+            FieldValue::Float(std::f64::consts::PI),
             FieldValue::Integer(-42),
             FieldValue::String("hello".to_string()),
             FieldValue::Boolean(true),
