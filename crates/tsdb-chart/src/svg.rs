@@ -15,7 +15,6 @@
 //!
 
 use crate::chart::{TimeSeriesChart, ChartType};
-use crate::series::TimeSeries;
 
 /// SVG 渲染器 — 将 TimeSeriesChart 转换为 SVG 字符串
 ///
@@ -221,6 +220,7 @@ impl SvgRenderer {
 mod tests {
     use super::*;
     use crate::chart::{ChartConfig, ChartType, TimeSeriesChart};
+    use crate::TimeSeries;
 
     #[test]
     fn test_svg_line_chart() {

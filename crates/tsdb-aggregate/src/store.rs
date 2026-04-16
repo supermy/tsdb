@@ -8,7 +8,7 @@ use rocksdb::{DB, Options, WriteBatch};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tracing::{info, warn};
+use tracing::info;
 
 /// 轻度汇总存储 — 将聚合结果持久化到独立的 RocksDB 实例
 ///

@@ -20,13 +20,14 @@
 use crate::error::{Result, TsdbError};
 use crate::rowkey::{RowKey, Qualifier, timestamp_to_cf_name, compute_tags_hash, align_to_block_start, SEPARATOR};
 use crate::storage::cf_manager::{CfManager, CfConfig, METADATA_CF};
-use crate::storage::merge_operand::{MergedBlock, MergedField, encode_merge_operand, detect_value_format, ValueFormat};
+use crate::storage::merge_operand::{MergedBlock, encode_merge_operand, detect_value_format, ValueFormat};
 use crate::storage::options::TsdbOptions;
 use tsdb_types::model::{DataPoint, FieldValue, Tags};
 use rocksdb::{WriteBatch, MultiThreaded};
 use std::path::Path;
 use std::sync::Arc;
 use chrono::NaiveDate;
+use tsdb_compress::codec::{BlockCodec, Codec, DataBlock, CompressedBlock};
 
 /// TSDB 数据库类型别名
 ///
@@ -519,6 +520,284 @@ impl StorageEngine {
     /// 成功返回被删除的 CF 名称列表，失败返回错误
     pub fn cleanup(&self) -> Result<Vec<String>> {
         self.cf_manager.cleanup_expired_cfs()
+    }
+
+    /// 压缩写入数据块
+    ///
+    /// 将 DataBlock 通过 BlockCodec 压缩后写入 RocksDB。
+    /// 适用于批量写入场景，压缩后可节省 50-80% 存储空间。
+    ///
+    /// # 参数
+    ///
+    /// - `measurement`: 指标名称
+    /// - `tags`: 标签集合
+    /// - `block`: 数据块
+    ///
+    /// # Key 格式
+    ///
+    /// ```text
+    /// [measurement] | [tags_hash:8B] | [block_start_ts:8B] | 0xFF (compressed marker)
+    /// ```
+    pub fn write_compressed_block(
+        &self,
+        measurement: &str,
+        tags: &Tags,
+        block: &DataBlock,
+    ) -> Result<()> {
+        if block.timestamps.is_empty() {
+            return Ok(());
+        }
+
+        let tags_hash = compute_tags_hash(tags);
+        let block_start = align_to_block_start(block.timestamps[0]);
+        let cf_name = timestamp_to_cf_name(block.timestamps[0]);
+
+        let date = micros_to_date(block.timestamps[0]);
+        self.cf_manager.ensure_cf_for_date(date)?;
+
+        let cf = self.cf_manager.cf_handle(&cf_name)?;
+
+        let mut key = measurement.as_bytes().to_vec();
+        key.push(SEPARATOR);
+        key.extend_from_slice(&tags_hash.to_be_bytes());
+        key.push(SEPARATOR);
+        key.extend_from_slice(&block_start.to_be_bytes());
+        key.push(0xFF);
+
+        let codec = BlockCodec;
+        let compressed = codec.compress_block(block)
+            .map_err(|e| TsdbError::Storage(format!("block compression failed: {}", e)))?;
+
+        let compressed_bytes = bincode::serialize(&compressed)
+            .map_err(|e| TsdbError::Storage(format!("block serialization failed: {}", e)))?;
+
+        self.db.put_cf(&cf, &key, &compressed_bytes)
+            .map_err(|e| TsdbError::Storage(format!("compressed write failed: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// 压缩读取数据块
+    ///
+    /// 从 RocksDB 读取压缩的 DataBlock 并解码。
+    /// 返回时间范围内的数据点。
+    ///
+    /// # 参数
+    ///
+    /// - `measurement`: 指标名称
+    /// - `tags`: 标签集合
+    /// - `block_start_ts`: 块起始时间戳（微秒）
+    /// - `start_micros`: 查询起始时间
+    /// - `end_micros`: 查询结束时间
+    pub fn read_compressed_block(
+        &self,
+        measurement: &str,
+        tags: &Tags,
+        block_start_ts: i64,
+        start_micros: i64,
+        end_micros: i64,
+    ) -> Result<Vec<DataPoint>> {
+        let tags_hash = compute_tags_hash(tags);
+        let cf_name = timestamp_to_cf_name(block_start_ts);
+
+        let cf = match self.cf_manager.cf_handle(&cf_name) {
+            Ok(cf) => cf,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let mut key = measurement.as_bytes().to_vec();
+        key.push(SEPARATOR);
+        key.extend_from_slice(&tags_hash.to_be_bytes());
+        key.push(SEPARATOR);
+        key.extend_from_slice(&block_start_ts.to_be_bytes());
+        key.push(0xFF);
+
+        match self.db.get_cf(&cf, &key) {
+            Ok(Some(value)) => {
+                let compressed: CompressedBlock = bincode::deserialize(&value)
+                    .map_err(|e| TsdbError::Storage(format!("block deserialization failed: {}", e)))?;
+                let codec = BlockCodec;
+                let block = codec.decompress_block(&compressed)
+                    .map_err(|e| TsdbError::Storage(format!("block decompression failed: {}", e)))?;
+
+                let mut results = Vec::new();
+                for (i, &ts) in block.timestamps.iter().enumerate() {
+                    if ts >= start_micros && ts <= end_micros {
+                        let mut dp = DataPoint::new(measurement, ts);
+                        dp.tags = tags.clone();
+                        for (field_name, field_values) in &block.fields {
+                            if let Some(fv) = field_values.get(i) {
+                                dp.fields.insert(field_name.clone(), fv.clone());
+                            }
+                        }
+                        results.push(dp);
+                    }
+                }
+                Ok(results)
+            }
+            Ok(None) => Ok(Vec::new()),
+            Err(e) => Err(TsdbError::Storage(format!("compressed read failed: {}", e))),
+        }
+    }
+
+    /// 压缩范围查询
+    ///
+    /// 查询指定时间范围内的压缩数据块，自动检测压缩格式。
+    /// 优先读取压缩块，回退到普通格式。
+    pub fn read_range_compressed(
+        &self,
+        measurement: &str,
+        tags: &Tags,
+        start_micros: i64,
+        end_micros: i64,
+    ) -> Result<Vec<DataPoint>> {
+        let mut results = Vec::new();
+        let start_date = micros_to_date(start_micros);
+        let end_date = micros_to_date(end_micros);
+
+        let mut current_date = start_date;
+        while current_date <= end_date {
+            let cf_name = self.cf_manager.get_cf_name(current_date);
+
+            if let Ok(cf) = self.cf_manager.cf_handle(&cf_name) {
+                let tags_hash = compute_tags_hash(tags);
+                let mut prefix_key = measurement.as_bytes().to_vec();
+                prefix_key.push(SEPARATOR);
+                prefix_key.extend_from_slice(&tags_hash.to_be_bytes());
+                prefix_key.push(SEPARATOR);
+
+                let iter = self.db.prefix_iterator_cf(&cf, &prefix_key);
+                for item in iter {
+                    let (key, value) = match item {
+                        Ok(kv) => kv,
+                        Err(_) => break,
+                    };
+
+                    if !key.starts_with(&prefix_key) {
+                        break;
+                    }
+
+                    if key.last() == Some(&0xFF) {
+                        if let Ok(compressed) = bincode::deserialize::<CompressedBlock>(&value) {
+                            let codec = BlockCodec;
+                            if let Ok(block) = codec.decompress_block(&compressed) {
+                                for (i, &ts) in block.timestamps.iter().enumerate() {
+                                    if ts >= start_micros && ts <= end_micros {
+                                        let mut dp = DataPoint::new(measurement, ts);
+                                        dp.tags = tags.clone();
+                                        for (field_name, field_values) in &block.fields {
+                                            if let Some(fv) = field_values.get(i) {
+                                                dp.fields.insert(field_name.clone(), fv.clone());
+                                            }
+                                        }
+                                        results.push(dp);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        match detect_value_format(&value) {
+                            ValueFormat::Merged => {
+                                if let Some(rk) = RowKey::decode(&key) {
+                                    if let Some(block) = MergedBlock::decode(&value) {
+                                        let dps = block.to_data_points(&rk.measurement, rk.block_start_timestamp, tags.clone());
+                                        for dp in dps {
+                                            if dp.timestamp >= start_micros && dp.timestamp <= end_micros {
+                                                results.push(dp);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            ValueFormat::Raw => {
+                                let sep_pos = match key.iter().rposition(|&b| b == 0) {
+                                    Some(pos) => pos,
+                                    None => continue,
+                                };
+                                let rk_data = &key[..sep_pos];
+                                let qual_data = &key[sep_pos + 1..];
+                                if let Some(rk) = RowKey::decode(rk_data) {
+                                    if let Some(qual) = Qualifier::decode(qual_data) {
+                                        let ts = rk.block_start_timestamp + qual.microsecond_offset as i64;
+                                        if ts >= start_micros && ts <= end_micros {
+                                            let fv = decode_field_value(&value);
+                                            let mut dp = DataPoint::new(&rk.measurement, ts);
+                                            dp.tags = tags.clone();
+                                            if let Some(v) = fv {
+                                                dp.fields.insert(qual.field_name, v);
+                                            }
+                                            results.push(dp);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            current_date += chrono::Duration::days(1);
+        }
+
+        results.sort_by_key(|dp| dp.timestamp);
+        Ok(results)
+    }
+
+    /// 持久化索引数据到 metadata CF
+    ///
+    /// 将 IndexManager 的所有索引数据序列化后写入 RocksDB 的 metadata 列族。
+    /// 建议在服务关闭前或定期（如每 5 分钟）调用。
+    pub fn persist_index(
+        &self,
+        index_manager: &tsdb_index::IndexManager,
+    ) -> Result<()> {
+        let cf = self.cf_manager.cf_handle(METADATA_CF)?;
+        let serialized = index_manager.serialize_all();
+
+        let mut batch = WriteBatch::default();
+        for (key, value) in &serialized {
+            batch.put_cf(&cf, key.as_bytes(), value);
+        }
+
+        self.db.write(batch)
+            .map_err(|e| TsdbError::Storage(format!("index persist failed: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// 从 metadata CF 恢复索引数据
+    ///
+    /// 启动时调用，从 RocksDB 的 metadata 列族读取序列化的索引数据，
+    /// 逐条反序列化并填充到 IndexManager 中。
+    pub fn restore_index(
+        &self,
+        index_manager: &mut tsdb_index::IndexManager,
+    ) -> Result<usize> {
+        let cf = self.cf_manager.cf_handle(METADATA_CF)?;
+        let mut restored_count = 0;
+
+        let iter = self.db.iterator_cf(
+            &cf,
+            rocksdb::IteratorMode::From(b"index:", rocksdb::Direction::Forward),
+        );
+
+        for item in iter {
+            let (key, value) = match item {
+                Ok(kv) => kv,
+                Err(_) => break,
+            };
+
+            let key_str = String::from_utf8_lossy(&key);
+            if !key_str.starts_with("index:") {
+                break;
+            }
+
+            if index_manager.deserialize_entry(&key_str, &value) {
+                restored_count += 1;
+            }
+        }
+
+        Ok(restored_count)
     }
 
     /// 获取数据库实例引用

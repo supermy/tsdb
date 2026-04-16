@@ -1,17 +1,17 @@
 //! # NNG 传输层 — REP/PULL/PUB 三协议模式
 
 use crate::protocol::{Request, Response, decode_request, encode_response};
-use tsdb_core::storage::StorageEngine;
 use tsdb_core::storage::multi_db::MultiDbManager;
 use tsdb_core::error::TsdbError;
 use tsdb_query::QueryEngine;
-use tsdb_types::model::{DataPoint, FieldValue};
+use tsdb_types::model::DataPoint;
 use std::sync::Arc;
 use tracing::{info, error};
 
 /// NNG REP/PULL 双协议服务器
 pub struct NngServer {
     rep_url: String,
+    #[allow(dead_code)]
     pub_url: String,
     pull_url: String,
     db_manager: Arc<MultiDbManager>,

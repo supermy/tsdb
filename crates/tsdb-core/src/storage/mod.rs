@@ -6,6 +6,10 @@ pub mod merge_operator;
 pub mod options;
 pub mod block_writer;
 pub mod multi_db;
+pub mod comparator;
+pub mod bulk_import;
+pub mod rocksdb_hooks;
+pub mod properties;
 
 pub use engine::StorageEngine;
 pub use cf_manager::CfManager;
@@ -14,3 +18,7 @@ pub use merge_operand::{MergedBlock, MergedField, ValueFormat, MERGE_MAGIC};
 pub use options::TsdbOptions;
 pub use block_writer::{BlockWriter, BlockWriterConfig};
 pub use multi_db::MultiDbManager;
+pub use comparator::register_comparator;
+pub use bulk_import::{BulkImporter, ingest_sst_files, bulk_load_sorted};
+pub use rocksdb_hooks::{StorageMetrics, MetricsSnapshot, StorageHook, HookManager};
+pub use properties::TsdbProperties;

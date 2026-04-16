@@ -21,7 +21,7 @@
 //!
 //! 后写入的同名字段会覆盖先写入的值（upsert 语义）。
 
-use crate::storage::merge_operand::{MergedBlock, decode_merge_operand, MergedField};
+use crate::storage::merge_operand::{MergedBlock, decode_merge_operand};
 
 /// TSDB 时序块级合并函数
 ///
@@ -123,7 +123,7 @@ pub fn register_merge_operator(opts: &mut rocksdb::Options) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::merge_operand::encode_merge_operand;
+    use crate::storage::merge_operand::{encode_merge_operand, MergedField};
     use tsdb_types::model::FieldValue;
 
     /// 测试合并逻辑的 upsert（覆盖）语义

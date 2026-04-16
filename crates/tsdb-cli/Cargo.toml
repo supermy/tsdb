@@ -7,12 +7,21 @@ edition.workspace = true
 name = "tsdb-cli"
 path = "src/main.rs"
 
+[[bin]]
+name = "tsdb-bench"
+path = "src/bin/bench.rs"
+
 [dependencies]
 tsdb-types = { workspace = true }
 tsdb-core = { workspace = true }
 tsdb-config = { workspace = true }
 tsdb-query = { workspace = true }
 tsdb-server = { workspace = true }
+tsdb-compress = { workspace = true }
+tsdb-index = { workspace = true }
+tsdb-aggregate = { workspace = true }
+tsdb-chart = { workspace = true }
+tsdb-dashboard = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
@@ -20,3 +29,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
+tempfile = { workspace = true }

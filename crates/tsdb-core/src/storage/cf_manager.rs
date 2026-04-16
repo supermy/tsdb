@@ -146,7 +146,7 @@ impl CfManager {
     /// # 返回
     /// - `Ok(Arc<BoundColumnFamily>)`: 列族句柄，用于后续的 put/get/scan 操作
     /// - `Err(TsdbError::ColumnFamilyNotFound)`: 指定名称的列族不存在
-    pub fn cf_handle(&self, cf_name: &str) -> Result<Arc<rocksdb::BoundColumnFamily>> {
+    pub fn cf_handle(&self, cf_name: &str) -> Result<Arc<rocksdb::BoundColumnFamily<'_>>> {
         self.db.cf_handle(cf_name)
             .ok_or_else(|| TsdbError::ColumnFamilyNotFound(cf_name.to_string()))
     }

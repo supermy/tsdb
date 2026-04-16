@@ -185,7 +185,7 @@ impl GorillaEncoder {
     /// # 参数
     /// - `value`: 待写入的位数据（从高位开始取）
     /// - `count`: 需要写入的位数
-    fn write_bits(&mut self, mut value: u64, mut count: u32) {
+    fn write_bits(&mut self, value: u64, mut count: u32) {
         while count > 0 {
             let bits_available = BITS_PER_BYTE - self.bits_used;
             let bits_to_write = std::cmp::min(bits_available as u32, count);

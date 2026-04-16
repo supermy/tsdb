@@ -29,13 +29,13 @@
 //! | `tag_value_ids` | `(u32, String)` (key_id, value) | `u32` (ID) | tag value → ID 映射 |
 //!
 
-use crate::error::{Result, TsdbError};
 use rocksdb::DB;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// 维度列族名称（用于持久化 tag 映射关系）
+#[allow(dead_code)]
 const DIMENSION_CF: &str = "dimension";
 
 /// 维度表 — 管理 Tag Key / Tag Value 的字典编码与解码
@@ -50,6 +50,7 @@ const DIMENSION_CF: &str = "dimension";
 /// tag key 和 tag value 各自维护独立的 ID 空间。
 pub struct DimensionTable {
     /// 底层 RocksDB 实例（预留持久化扩展能力）
+    #[allow(dead_code)]
     db: Arc<DB>,
     /// Tag Key → ID 的内存映射表（写时复制语义，Mutex 保护）
     tag_key_ids: std::sync::Mutex<HashMap<String, u32>>,

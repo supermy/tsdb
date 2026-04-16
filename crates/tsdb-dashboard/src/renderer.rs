@@ -14,7 +14,6 @@
 
 use crate::business::BusinessDashboard;
 use crate::performance::PerformanceDashboard;
-use tsdb_chart::SvgRenderer;
 
 /// 仪表盘输出格式枚举
 #[derive(Debug, Clone, Copy, PartialEq)]

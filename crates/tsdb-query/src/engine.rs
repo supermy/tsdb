@@ -22,7 +22,7 @@
 //!
 
 use crate::parser::{SqlParser, ParsedQuery, SelectField, AggFunc};
-use crate::plan::{QueryPlanner, ExecutionPlan};
+use crate::plan::QueryPlanner;
 use tsdb_core::storage::StorageEngine;
 use tsdb_types::model::{FieldValue, DataPoint};
 use thiserror::Error;

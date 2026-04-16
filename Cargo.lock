@@ -302,6 +302,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
+name = "crc32fast"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1027,6 +1036,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tracing",
+ "tsdb-chart",
  "tsdb-config",
  "tsdb-core",
  "tsdb-types",
@@ -1052,10 +1062,16 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tracing",
+ "tsdb-aggregate",
+ "tsdb-chart",
+ "tsdb-compress",
  "tsdb-config",
  "tsdb-core",
+ "tsdb-dashboard",
+ "tsdb-index",
  "tsdb-query",
  "tsdb-server",
  "tsdb-types",
@@ -1093,6 +1109,7 @@ dependencies = [
  "bincode",
  "byteorder",
  "chrono",
+ "rmp-serde",
  "rocksdb",
  "serde",
  "serde_json",
@@ -1101,6 +1118,7 @@ dependencies = [
  "tracing",
  "tsdb-compress",
  "tsdb-config",
+ "tsdb-index",
  "tsdb-types",
 ]
 
@@ -1123,8 +1141,10 @@ name = "tsdb-index"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crc32fast",
  "roaring",
  "serde",
+ "tempfile",
  "thiserror",
  "tracing",
  "tsdb-types",
@@ -1162,6 +1182,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "crc32fast",
  "nng",
  "rmp-serde",
  "serde",

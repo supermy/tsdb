@@ -16,7 +16,7 @@
 //! Aggregator::finalize() → AggregationStore::write_batch()
 //! ```
 
-use crate::aggregator::{Aggregator, TimeDimension, AggregationResult};
+use crate::aggregator::{Aggregator, TimeDimension};
 use crate::store::AggregationStoreManager;
 use tsdb_types::model::DataPoint;
 use std::collections::HashMap;

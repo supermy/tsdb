@@ -14,7 +14,7 @@
 //! | 冷数据 | ZSTD + 禁用自动压缩 | 高压缩比，只读场景 |
 //! | 元数据 | 小 buffer | 数据量小，快速持久化 |
 
-use rocksdb::{Options, BlockBasedOptions, BlockBasedIndexType, DataBlockIndexType};
+use rocksdb::{Options, BlockBasedOptions, BlockBasedIndexType, DataBlockIndexType, WriteBufferManager};
 
 /// TSDB RocksDB 选项工厂
 ///
@@ -102,8 +102,9 @@ impl TsdbOptions {
         // 应用 BlockBasedTable 配置
         opts.set_block_based_table_factory(&block_opts);
 
-        // 注册 TSDB MergeOperator
         crate::storage::merge_operator::register_merge_operator(&mut opts);
+
+        crate::storage::comparator::register_comparator(&mut opts);
 
         opts
     }
@@ -223,5 +224,50 @@ impl TsdbOptions {
         opts.set_max_write_buffer_number(3);
 
         opts
+    }
+
+    /// 创建共享 WriteBufferManager
+    ///
+    /// WriteBufferManager 用于跨多个 DB 实例共享写缓冲区配额，
+    /// 当总内存使用超过阈值时自动触发刷盘，防止 OOM。
+    ///
+    /// # 参数
+    ///
+    /// - `buffer_size`: 缓冲区大小（字节），推荐 256MB~1GB
+    /// - `allow_stall`: 是否在超限时阻塞写入（true=阻塞，false=仅触发刷盘）
+    ///
+    /// # 返回值
+    ///
+    /// WriteBufferManager 实例，需在创建所有 DB 实例前创建并共享
+    pub fn create_write_buffer_manager(buffer_size: usize, allow_stall: bool) -> WriteBufferManager {
+        WriteBufferManager::new_write_buffer_manager(buffer_size, allow_stall)
+    }
+
+    /// 创建带缓存的 WriteBufferManager
+    ///
+    /// 与 BlockCache 共享配额管理，当 MemTable 内存使用超过
+    /// cache 容量的某个比例时触发刷盘。
+    ///
+    /// # 参数
+    ///
+    /// - `buffer_size`: 缓冲区大小（字节）
+    /// - `allow_stall`: 是否在超限时阻塞写入
+    /// - `cache`: BlockCache 实例引用
+    pub fn create_write_buffer_manager_with_cache(
+        buffer_size: usize,
+        allow_stall: bool,
+        cache: &rocksdb::Cache,
+    ) -> WriteBufferManager {
+        WriteBufferManager::new_write_buffer_manager_with_cache(buffer_size, allow_stall, cache.clone())
+    }
+
+    /// 将 WriteBufferManager 应用到 Options
+    ///
+    /// # 参数
+    ///
+    /// - `opts`: 需要修改的 Options
+    /// - `wbm`: WriteBufferManager 引用
+    pub fn apply_write_buffer_manager(opts: &mut Options, wbm: &WriteBufferManager) {
+        opts.set_write_buffer_manager(wbm);
     }
 }

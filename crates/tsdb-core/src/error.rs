@@ -155,6 +155,24 @@ impl From<serde_json::Error> for TsdbError {
     }
 }
 
+impl From<bincode::Error> for TsdbError {
+    fn from(e: bincode::Error) -> Self {
+        TsdbError::Serialization(e.to_string())
+    }
+}
+
+impl From<rmp_serde::decode::Error> for TsdbError {
+    fn from(e: rmp_serde::decode::Error) -> Self {
+        TsdbError::Serialization(e.to_string())
+    }
+}
+
+impl From<rmp_serde::encode::Error> for TsdbError {
+    fn from(e: rmp_serde::encode::Error) -> Self {
+        TsdbError::Serialization(e.to_string())
+    }
+}
+
 /// TSDB 结果类型别名
 ///
 /// 使用 `Result<T>` 替代 `std::result::Result<T, TsdbError>`，

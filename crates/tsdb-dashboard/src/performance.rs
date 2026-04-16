@@ -11,7 +11,6 @@
 //!
 
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
 
 /// 性能健康等级
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

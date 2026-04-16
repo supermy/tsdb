@@ -76,6 +76,24 @@ fn handle_http_request(stream: &mut std::net::TcpStream, db: &Arc<StorageEngine>
                 Err(e) => http_response(500, &format!(r#"{{"error":"{}"}}"#, e)),
             }
         }
+        ("POST", p) if p.starts_with("/api/v1/chart") => {
+            match handle_chart(&body, db, query_engine) {
+                Ok(svg) => http_response_svg(200, &svg),
+                Err(e) => http_response(500, &format!(r#"{{"error":"{}"}}"#, e)),
+            }
+        }
+        ("GET", p) if p.starts_with("/api/v1/timeseries") => {
+            match handle_timeseries(&body) {
+                Ok(svg) => http_response_svg(200, &svg),
+                Err(e) => http_response(500, &format!(r#"{{"error":"{}"}}"#, e)),
+            }
+        }
+        ("POST", p) if p.starts_with("/api/v1/timeseries") => {
+            match handle_timeseries(&body) {
+                Ok(svg) => http_response_svg(200, &svg),
+                Err(e) => http_response(500, &format!(r#"{{"error":"{}"}}"#, e)),
+            }
+        }
         ("GET", "/api/v1/dashboard/business") => {
             match handle_business_dashboard(&body, db, query_engine) {
                 Ok(html) => http_response_html(200, &html),
@@ -222,6 +240,37 @@ fn handle_business_dashboard(sql_str: &str, db: &Arc<StorageEngine>, query_engin
     let result = query_engine.execute(sql_str, db).map_err(|e| TsdbError::Query(e.to_string()))?;
     let dash = tsdb_dashboard::BusinessDashboard::from_query_result(&result.columns, &result.rows);
     Ok(tsdb_dashboard::DashboardRenderer::render_business_html(&dash))
+}
+
+fn handle_timeseries(body: &str) -> Result<String> {
+    let req: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| TsdbError::Serialization(format!("invalid JSON: {}", e)))?;
+
+    let business = req["business"].as_str().unwrap_or("default");
+    let measurement = req["measurement"].as_str().unwrap_or("cpu");
+    let dimension = req["dimension"].as_str().unwrap_or("hour");
+    let chart_type = req["chart_type"].as_str().unwrap_or("line");
+    let title = req["title"].as_str().unwrap_or("Timeseries Trend");
+    let start_ts = req["start_ts"].as_i64().unwrap_or(0);
+    let end_ts = req["end_ts"].as_i64().unwrap_or(i64::MAX);
+
+    let data_dir = std::env::var("TSDB_DATA_DIR")
+        .unwrap_or_else(|_| "./data".to_string());
+    let agg_dir = std::path::Path::new(&data_dir).join("aggregation");
+
+    let store = tsdb_aggregate::store::AggregationStore::open(&agg_dir, business)
+        .map_err(|e| TsdbError::Storage(e))?;
+
+    let dim = tsdb_aggregate::aggregator::TimeDimension::from_name(dimension);
+    let ct = match chart_type {
+        "area" => tsdb_chart::ChartType::Area,
+        "bar" => tsdb_chart::ChartType::Bar,
+        _ => tsdb_chart::ChartType::Line,
+    };
+
+    tsdb_aggregate::TimeseriesGenerator::generate_trend(
+        &store, business, measurement, dim, start_ts, end_ts, ct, title,
+    ).map_err(|e| TsdbError::Storage(e))
 }
 
 fn handle_performance_dashboard() -> Result<String> {

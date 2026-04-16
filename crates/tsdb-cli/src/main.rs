@@ -252,7 +252,7 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
 /// 用于批量操作时减少输出干扰。
 fn send_request_silent(addr: &str, request: tsdb_server::protocol::Request) -> anyhow::Result<()> {
     use std::io::{Read, Write};
-    use tsdb_server::protocol::{encode_request, decode_response};
+    use tsdb_server::protocol::encode_request;
 
     let mut stream = std::net::TcpStream::connect(addr)?;
     stream.set_write_timeout(Some(std::time::Duration::from_secs(5)))?;
@@ -470,7 +470,7 @@ fn send_request(addr: &str, request: tsdb_server::protocol::Request) -> anyhow::
             println!("{}", columns.join("\t"));
             // 显示数据行
             for row in rows {
-                let vals: Vec<String> = row.iter().map(|v| format!("{:?}", v)).collect();
+                let vals: Vec<String> = row.iter().map(|v: &tsdb_server::protocol::FieldValueProto| format!("{:?}", v)).collect();
                 println!("{}", vals.join("\t"));
             }
         }

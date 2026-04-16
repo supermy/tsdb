@@ -14,7 +14,7 @@
 //! ```
 //!
 
-use crate::aggregator::{Aggregator, TimeDimension, AggregationResult};
+use crate::aggregator::{Aggregator, TimeDimension};
 use tsdb_types::model::DataPoint;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -70,7 +70,7 @@ impl Worker {
     pub fn start(&self) -> Result<std::thread::JoinHandle<()>, tsdb_core::error::TsdbError> {
         self.running.store(true, Ordering::Relaxed);
         let pull_url = self.pull_url.clone();
-        let pub_url = self.pub_url.clone();
+        let _pub_url = self.pub_url.clone();
         let time_dims = self.time_dimensions.clone();
         let running = self.running.clone();
 

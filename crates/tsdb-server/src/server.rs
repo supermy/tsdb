@@ -4,13 +4,12 @@
 //! 支持多业务数据库隔离。
 
 use crate::protocol::{Request, Response, decode_request, encode_response};
-use tsdb_core::storage::StorageEngine;
 use tsdb_core::storage::cf_manager::CfConfig;
 use tsdb_core::storage::multi_db::MultiDbManager;
 use tsdb_core::error::{TsdbError, Result};
 use tsdb_config::TsdbConfig;
 use tsdb_query::QueryEngine;
-use tsdb_types::model::{DataPoint, FieldValue};
+use tsdb_types::model::DataPoint;
 use std::sync::Arc;
 use std::io::{Read, Write};
 use tracing::{info, error};
@@ -65,6 +64,80 @@ impl TsdbServer {
 
         self.db_manager.ensure_default()?;
 
+        let tcp_addr = format!("{}:{}", self.config.server.host, self.config.server.port);
+        let listener = std::net::TcpListener::bind(&tcp_addr)
+            .map_err(|e| TsdbError::Network(format!("bind failed: {}", e)))?;
+
+        info!("TSDB server listening on {}", tcp_addr);
+        info!("HTTP API at http://{}/api/v1/", http_addr);
+
+        let db = self.db_manager.get_database("default")?;
+        let query_engine = QueryEngine::new();
+        let db_mgr = Arc::clone(&self.db_manager);
+        std::thread::spawn(move || {
+            crate::http_api::start_http_server(&http_addr, db, query_engine, db_mgr);
+        });
+
+        for stream in listener.incoming() {
+            match stream {
+                Ok(mut stream) => {
+                    if let Err(e) = self.handle_connection(&mut stream) {
+                        error!("connection error: {}", e);
+                    }
+                }
+                Err(e) => { error!("accept error: {}", e); }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn start_with_nng(&mut self, rep_port: u16, pull_port: u16, pub_port: u16) -> Result<()> {
+        self.db_manager.ensure_default()?;
+
+        let db_mgr = Arc::clone(&self.db_manager);
+        let query_engine = QueryEngine::new();
+
+        let rep_url = format!("tcp://*:{}", rep_port);
+        let pull_url = format!("tcp://*:{}", pull_port);
+        let pub_url = format!("tcp://*:{}", pub_port);
+
+        let nng_server = crate::nng_transport::NngServer::new(
+            &rep_url, &pub_url, &pull_url,
+            Arc::clone(&db_mgr), query_engine,
+        );
+
+        std::thread::spawn(move || {
+            if let Err(e) = nng_server.start_rep() {
+                error!("NNG REP error: {}", e);
+            }
+        });
+
+        let nng_pull_server = crate::nng_transport::NngServer::new(
+            &rep_url, &pub_url, &pull_url,
+            db_mgr, QueryEngine::new(),
+        );
+        std::thread::spawn(move || {
+            if let Err(e) = nng_pull_server.start_pull() {
+                error!("NNG PULL error: {}", e);
+            }
+        });
+
+        info!("NNG REP listening on {}", rep_url);
+        info!("NNG PULL listening on {}", pull_url);
+        info!("NNG PUB listening on {}", pub_url);
+
+        Ok(())
+    }
+
+    pub fn start_all(&mut self) -> Result<()> {
+        let http_port = self.config.server.port + 1;
+        let nng_rep_port = self.config.server.port + 2;
+        let nng_pull_port = self.config.server.port + 3;
+        let nng_pub_port = self.config.server.port + 4;
+
+        self.start_with_nng(nng_rep_port, nng_pull_port, nng_pub_port)?;
+
+        let http_addr = format!("{}:{}", self.config.server.host, http_port);
         let tcp_addr = format!("{}:{}", self.config.server.host, self.config.server.port);
         let listener = std::net::TcpListener::bind(&tcp_addr)
             .map_err(|e| TsdbError::Network(format!("bind failed: {}", e)))?;

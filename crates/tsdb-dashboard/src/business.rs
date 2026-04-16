@@ -153,7 +153,7 @@ impl BusinessDashboard {
     pub fn summary_json(&self) -> serde_json::Value {
         let mut cards = Vec::new();
         for m in &self.metrics {
-            let change_pct = if m.previous > 0.0 { ((m.current - m.previous) / m.previous * 100.0) } else { 0.0 };
+            let change_pct = if m.previous > 0.0 { (m.current - m.previous) / m.previous * 100.0 } else { 0.0 };
             cards.push(serde_json::json!({
                 "name": m.name, "value": m.current, "previous": m.previous,
                 "change_pct": format!("{:.1}%", change_pct),
