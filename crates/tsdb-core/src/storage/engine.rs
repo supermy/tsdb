@@ -125,33 +125,28 @@ impl StorageEngine {
     /// [type:1B] | [payload:variable]
     /// ```
     pub fn write(&self, dp: &DataPoint) -> Result<()> {
-        // 构建 RowKey
         let row_key = RowKey::from_data_point(dp);
         let block_start = row_key.block_start_timestamp;
         let cf_name = timestamp_to_cf_name(dp.timestamp);
 
-        // 确保对应日期的 CF 存在
         let date = micros_to_date(dp.timestamp);
         self.cf_manager.ensure_cf_for_date(date)?;
 
-        // 获取 CF handle
         let cf = self.cf_manager.cf_handle(&cf_name)?;
         let rk_bytes = row_key.encode();
+        let rk_prefix_len = rk_bytes.len();
 
-        // 逐字段写入
         for (field_name, field_value) in &dp.fields {
-            // 构建 Qualifier
             let qualifier = Qualifier::new(field_name, dp.timestamp, block_start);
+            let q_bytes = qualifier.encode();
 
-            // 构建 Key: RowKey + 0x00 + Qualifier
-            let mut key_bytes = rk_bytes.clone();
+            let mut key_bytes = Vec::with_capacity(rk_prefix_len + 1 + q_bytes.len());
+            key_bytes.extend_from_slice(&rk_bytes);
             key_bytes.push(0u8);
-            key_bytes.extend_from_slice(&qualifier.encode());
+            key_bytes.extend_from_slice(&q_bytes);
 
-            // 编码 Value
             let value_bytes = encode_field_value(field_value);
 
-            // 写入 RocksDB
             self.db
                 .put_cf(&cf, &key_bytes, &value_bytes)
                 .map_err(|e| TsdbError::Storage(format!("write failed: {}", e)))?;

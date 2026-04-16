@@ -264,7 +264,12 @@ impl QueryEngine {
                     AggFunc::Min => crate::vectorized::simd_agg::SimdAggFunc::Min,
                     AggFunc::Max => crate::vectorized::simd_agg::SimdAggFunc::Max,
                     AggFunc::Count => crate::vectorized::simd_agg::SimdAggFunc::Count,
-                    _ => crate::vectorized::simd_agg::SimdAggFunc::Avg,
+                    unsupported => {
+                        return Err(QueryError::Execution(format!(
+                            "unsupported aggregate function: {:?}",
+                            unsupported
+                        )));
+                    }
                 };
 
                 let value = crate::vectorized::VectorizedEngine::execute_aggregate(

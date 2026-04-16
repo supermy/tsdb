@@ -173,6 +173,15 @@ impl From<rmp_serde::encode::Error> for TsdbError {
     }
 }
 
+impl From<tsdb_compress::CompressError> for TsdbError {
+    fn from(e: tsdb_compress::CompressError) -> Self {
+        match e {
+            tsdb_compress::CompressError::Encode(msg) => TsdbError::Compression(msg),
+            tsdb_compress::CompressError::Decode(msg) => TsdbError::Decompression(msg),
+        }
+    }
+}
+
 /// TSDB 结果类型别名
 ///
 /// 使用 `Result<T>` 替代 `std::result::Result<T, TsdbError>`，

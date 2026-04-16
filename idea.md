@@ -1,3 +1,5 @@
+# 基于 Rust 构建的高性能时间序列数据库
+
 ## 功能架构
 
 构建一个高性能的时序数据库；
@@ -54,20 +56,6 @@ config.ini 提供各种配置参数；
 ### 端口对外服务
 
 NNG提供服务接口；命令行启动提供服务；
-
-### GITHUB发布
-
-通过github提供windows macos linux多操作系统发布平台；适配主流CPU；触发CI构建；
-
-### 测试驱动
-
-#### 功能开发与重构提供完备测试覆盖；
-
-#### 使用真实数据进行测试驱动；
-
-git clone https://github.com/timescale/tsbs
-生成 DevOps 4天数据（4000设备）
-./tsbs_generate_data --use-case="devops" --scale=4000 --timestamp-end="2025-01-05T00:00:00Z"
 
 ### 索引
 
@@ -127,3 +115,21 @@ git clone https://github.com/timescale/tsbs
 查询插件
 
 存储插件
+
+## 测试驱动开发
+
+#### 功能开发与重构提供完备测试覆盖；
+
+#### 系统集成开发与测试
+
+#### 使用真实数据进行测试驱动；
+
+git clone https://github.com/timescale/tsbs
+生成 DevOps 4天数据（4000设备）
+./tsbs_generate_data --use-case="devops" --scale=4000 --timestamp-end="2025-01-05T00:00:00Z"
+
+## 系统部署与发布
+
+### GITHUB发布
+
+通过github提供windows macos linux多操作系统发布平台；适配主流CPU；触发CI构建；

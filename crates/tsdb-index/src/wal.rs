@@ -21,6 +21,8 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use tracing::warn;
+
 const ENTRY_INSERT: u8 = 0;
 const ENTRY_DELETE: u8 = 1;
 const ENTRY_CHECKPOINT: u8 = 2;
@@ -95,16 +97,24 @@ impl IndexWAL {
             }
             let entry_len = u32::from_le_bytes(len_buf) as usize;
             if entry_len == 0 || entry_len > 16 * 1024 * 1024 {
+                warn!("WAL: invalid entry length {}, stopping replay", entry_len);
                 break;
             }
 
             let mut entry_buf = vec![0u8; entry_len];
             match reader.read_exact(&mut entry_buf) {
                 Ok(()) => {}
-                Err(_) => break,
+                Err(e) => {
+                    warn!("WAL: read error at entry: {}, stopping replay", e);
+                    break;
+                }
             }
 
             if entry_buf.len() < 1 + 8 + 4 + 4 {
+                warn!(
+                    "WAL: entry too short ({} bytes), stopping replay",
+                    entry_buf.len()
+                );
                 break;
             }
 
@@ -114,6 +124,12 @@ impl IndexWAL {
                 u32::from_le_bytes(entry_buf[9..13].try_into().unwrap_or([0; 4])) as usize;
 
             if entry_buf.len() < 13 + payload_len + 4 {
+                warn!(
+                    "WAL: truncated entry (need {} have {}), seq={}, stopping replay",
+                    13 + payload_len + 4,
+                    entry_buf.len(),
+                    sequence
+                );
                 break;
             }
 
@@ -126,6 +142,10 @@ impl IndexWAL {
 
             let computed_crc = crc32fast::hash(&payload);
             if stored_crc != computed_crc {
+                warn!(
+                    "WAL: CRC mismatch at seq={} (stored={:#x}, computed={:#x}), stopping replay",
+                    sequence, stored_crc, computed_crc
+                );
                 break;
             }
 
