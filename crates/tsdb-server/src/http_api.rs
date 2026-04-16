@@ -40,12 +40,30 @@ pub async fn start_http_server_async(
         .and(with_state(db_mgr.clone()))
         .and_then(handle_timeseries);
 
+    let create_db_route = warp::path!("api" / "v1" / "databases" / String)
+        .and(warp::post())
+        .and(with_state(db_mgr.clone()))
+        .and_then(handle_create_database);
+
+    let drop_db_route = warp::path!("api" / "v1" / "databases" / String)
+        .and(warp::delete())
+        .and(with_state(db_mgr.clone()))
+        .and_then(handle_drop_database);
+
+    let list_db_route = warp::path!("api" / "v1" / "databases")
+        .and(warp::get())
+        .and(with_state(db_mgr.clone()))
+        .and_then(handle_list_databases);
+
     let health_route =
         warp::path("health").map(|| reply::json(&json!({"status": "ok", "service": "tsdb-http"})));
 
     let routes = write_route
         .or(query_route)
         .or(timeseries_route)
+        .or(create_db_route)
+        .or(drop_db_route)
+        .or(list_db_route)
         .or(health_route)
         .with(
             warp::cors()
@@ -209,6 +227,47 @@ async fn handle_timeseries(
 
     Ok(reply::with_header(
         reply::json(&json!({"svg": svg})),
+        "content-type",
+        "application/json",
+    ))
+}
+
+async fn handle_create_database(
+    name: String,
+    db_mgr: Arc<MultiDbManager>,
+) -> Result<impl Reply, Rejection> {
+    match db_mgr.create_database(&name) {
+        Ok(_) => Ok(reply::with_header(
+            reply::json(
+                &json!({"status": "ok", "message": format!("database '{}' created", name)}),
+            ),
+            "content-type",
+            "application/json",
+        )),
+        Err(e) => Err(warp::reject::custom(HttpError(e.to_string()))),
+    }
+}
+
+async fn handle_drop_database(
+    name: String,
+    db_mgr: Arc<MultiDbManager>,
+) -> Result<impl Reply, Rejection> {
+    match db_mgr.drop_database(&name) {
+        Ok(_) => Ok(reply::with_header(
+            reply::json(
+                &json!({"status": "ok", "message": format!("database '{}' dropped", name)}),
+            ),
+            "content-type",
+            "application/json",
+        )),
+        Err(e) => Err(warp::reject::custom(HttpError(e.to_string()))),
+    }
+}
+
+async fn handle_list_databases(db_mgr: Arc<MultiDbManager>) -> Result<impl Reply, Rejection> {
+    let databases = db_mgr.list_databases();
+    Ok(reply::with_header(
+        reply::json(&json!({"databases": databases})),
         "content-type",
         "application/json",
     ))

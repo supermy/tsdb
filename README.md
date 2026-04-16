@@ -40,18 +40,18 @@
 
 | Crate | 职责 | 测试 |
 |-------|------|------|
-| **tsdb-types** | 共享数据模型 (DataPoint, FieldValue, Tags) | — |
+| **tsdb-types** | 共享数据模型 (DataPoint, FieldValue, Tags) | 1 ✅ |
 | **tsdb-core** | 存储引擎 (RocksDB, MergeOperator, RowKey, CF调优, BlockWriter) | 18 ✅ |
-| **tsdb-compress** | 压缩算法 (Delta, Gorilla XOR, Dictionary) | 9 ✅ |
-| **tsdb-index** | 索引层 (SkipList + 持久化, InvertedIndex + 持久化) | 8 ✅ |
-| **tsdb-query** | SQL 解析器 + 查询引擎 + 向量化 SIMD 执行 | 10 ✅ |
-| **tsdb-aggregate** | 轻度汇总引擎 (小时/天/周/月维度聚合) | 3 ✅ |
-| **tsdb-server** | TCP + HTTP + NNG 三协议服务端 | — |
+| **tsdb-compress** | 压缩算法 (Delta, Gorilla XOR, Dictionary) | 17 ✅ |
+| **tsdb-index** | 索引层 (SkipList + 持久化, InvertedIndex + 持久化) | 37 ✅ |
+| **tsdb-query** | SQL 解析器 + 查询引擎 + 向量化 SIMD 执行 | 16 ✅ |
+| **tsdb-aggregate** | 轻度汇总引擎 (小时/天/周/月维度聚合) | 22 ✅ |
+| **tsdb-server** | TCP + HTTP + NNG 三协议服务端 | 16 ✅ |
 | **tsdb-cli** | 命令行工具 (start/query/write/ping/list/load-tsbs/generate-tsbs) | — |
 | **tsdb-plugin** | 插件系统 (业务/查询/存储插件注册表) | 1 ✅ |
 | **tsdb-config** | 配置管理 (config.ini + 环境变量覆盖) | 3 ✅ |
 | **tsdb-chart** | 时序图表生成 (SVG 折线/面积/柱状图, JSON) | 4 ✅ |
-| **tsdb-dashboard** | 业务仪表盘 + 性能仪表盘 (HTML 渲染) | 3 ✅ |
+| **tsdb-dashboard** | 业务仪表盘 + 性能仪表盘 (HTML 渲染) | 1 ✅ |
 
 ## 核心特性
 
@@ -120,12 +120,13 @@
 - **TCP 接口**: MessagePack 二进制协议
 - **NNG 接口**: REQ/REP + PUB/SUB + PULL/PUSH
 - **HTTP RESTful API**:
-  - `GET /api/v1/ping` — 健康检查
+  - `GET /health` — 健康检查
   - `POST /api/v1/write` — 写入数据点
-  - `POST /api/v1/query` — SQL 查询
-  - `GET /api/v1/chart?sql=...` — 图表生成 (SVG)
-  - `GET /api/v1/dashboard/business?sql=...` — 业务仪表盘 (HTML)
-  - `GET /api/v1/dashboard/performance` — 性能仪表盘 (HTML)
+  - `GET /api/v1/query?sql=...` — SQL 查询
+  - `GET/POST /api/v1/timeseries` — 时序数据查询
+  - `POST /api/v1/databases/{name}` — 创建数据库
+  - `DELETE /api/v1/databases/{name}` — 删除数据库
+  - `GET /api/v1/databases` — 列出所有数据库
 
 ## 快速开始
 
@@ -135,10 +136,10 @@
 cargo build --release
 ```
 
-### 运行测试 (59 个测试)
+### 运行测试 (148 个测试)
 
 ```bash
-cargo test --lib
+cargo test --all
 ```
 
 ### 启动服务端
@@ -190,7 +191,10 @@ tsdb/
 ├── frontend/                   # ExpoGo React Native
 ├── benches/                    # 性能基准测试
 ├── plan.md                     # 实施状态文档
-└── deep-optimize-plan.md       # 深度优化计划文档
+├── deep-optimize-plan.md       # 深度优化计划文档
+├── tdd-implementation-plan.md  # TDD 实施计划文档
+└── docs/
+    └── architecture-diagrams.md # 架构可视化文档 (Mermaid)
 ```
 
 ## 技术栈
@@ -202,7 +206,7 @@ tsdb/
 - **SQL 解析**: sqlparser-rs 0.53
 - **压缩**: LZ4 (热数据), ZSTD (冷数据), Gorilla XOR, Delta+Zigzag
 - **索引**: SkipList (可持久化), Roaring Bitmap
-- **HTTP**: 内置 (无框架依赖)
+- **HTTP**: warp (异步 HTTP 框架)
 - **前端**: ExpoGo (React Native)
 - **CI/CD**: GitHub Actions (Linux/macOS/Windows, x86_64/ARM64)
 

@@ -177,13 +177,23 @@ impl QueryEngine {
         let start = time_range.map(|(s, _)| s).unwrap_or(0);
         let end = time_range.map(|(_, e)| e).unwrap_or(i64::MAX);
 
+        let tag_filters = query
+            .where_clause
+            .as_ref()
+            .map(|w| &w.tag_filters)
+            .map(|f| f.as_slice())
+            .unwrap_or(&[]);
+
+        let tags = if tag_filters.len() == 1 {
+            let mut t = tsdb_types::model::Tags::new();
+            t.insert(tag_filters[0].0.clone(), tag_filters[0].1.clone());
+            t
+        } else {
+            tsdb_types::model::Tags::new()
+        };
+
         let data_points = db
-            .read_range(
-                &query.measurement,
-                &tsdb_types::model::Tags::new(),
-                start,
-                end,
-            )
+            .read_range(&query.measurement, &tags, start, end)
             .map_err(|e| QueryError::Execution(format!("read_range failed: {}", e)))?;
 
         if data_points.is_empty() {
