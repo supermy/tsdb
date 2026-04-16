@@ -56,8 +56,20 @@ impl PerformanceMetric {
     /// 已判定等级的 PerformanceMetric 实例
     pub fn gauge(name: impl Into<String>, value: f64, max: f64, unit: impl Into<String>) -> Self {
         let ratio = if max > 0.0 { value / max } else { 1.0 };
-        let level = if ratio < 0.7 { Level::Good } else if ratio < 0.9 { Level::Warning } else { Level::Critical };
-        Self { name: name.into(), value, max, unit: unit.into(), level }
+        let level = if ratio < 0.7 {
+            Level::Good
+        } else if ratio < 0.9 {
+            Level::Warning
+        } else {
+            Level::Critical
+        };
+        Self {
+            name: name.into(),
+            value,
+            max,
+            unit: unit.into(),
+            level,
+        }
     }
 }
 
@@ -121,7 +133,11 @@ impl Default for PerformanceDashboard {
 
 impl PerformanceDashboard {
     pub fn new() -> Self {
-        Self { system_metrics: None, gauges: Vec::new(), history: Vec::new() }
+        Self {
+            system_metrics: None,
+            gauges: Vec::new(),
+            history: Vec::new(),
+        }
     }
 
     /// 设置系统指标快照（链式调用风格）
@@ -176,7 +192,12 @@ impl PerformanceDashboard {
     ///
     /// # 返回
     /// 预配置的 PerformanceMetric 向量
-    pub fn default_gauges(write_rate: f64, read_rate: f64, latency_ms: f64, compression: f64) -> Vec<PerformanceMetric> {
+    pub fn default_gauges(
+        write_rate: f64,
+        read_rate: f64,
+        latency_ms: f64,
+        compression: f64,
+    ) -> Vec<PerformanceMetric> {
         vec![
             PerformanceMetric::gauge("write_throughput", write_rate, 100_000.0, "ops/s"),
             PerformanceMetric::gauge("read_throughput", read_rate, 500_000.0, "ops/s"),
@@ -213,8 +234,10 @@ mod tests {
         dash.add_gauge(PerformanceMetric::gauge("cpu", 50.0, 100.0, "%"));
         dash.record(TimestampRecord {
             timestamp: chrono::Utc::now().timestamp_micros(),
-            writes: 1000, reads: 2000,
-            bytes_written: 1024 * 1024, bytes_read: 2048 * 1024,
+            writes: 1000,
+            reads: 2000,
+            bytes_written: 1024 * 1024,
+            bytes_read: 2048 * 1024,
         });
 
         let json = dash.summary_json();

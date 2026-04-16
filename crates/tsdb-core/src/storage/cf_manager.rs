@@ -94,7 +94,11 @@ impl CfManager {
     /// - `config`: 列族配置（热数据天数和保留天数）
     pub fn new(db: Arc<TsdbDB>, config: CfConfig) -> Self {
         let known_cfs = std::sync::Mutex::new(Vec::new());
-        Self { db, config, known_cfs }
+        Self {
+            db,
+            config,
+            known_cfs,
+        }
     }
 
     /// 确保指定日期的数据列族已存在
@@ -124,7 +128,8 @@ impl CfManager {
         };
 
         info!("creating CF {} (hot={})", cf_name, is_hot);
-        self.db.create_cf(&cf_name, &cf_opts)
+        self.db
+            .create_cf(&cf_name, &cf_opts)
             .map_err(|e| TsdbError::Storage(format!("failed to create CF {}: {}", cf_name, e)))?;
 
         self.known_cfs.lock().unwrap().push(cf_name);
@@ -147,7 +152,8 @@ impl CfManager {
     /// - `Ok(Arc<BoundColumnFamily>)`: 列族句柄，用于后续的 put/get/scan 操作
     /// - `Err(TsdbError::ColumnFamilyNotFound)`: 指定名称的列族不存在
     pub fn cf_handle(&self, cf_name: &str) -> Result<Arc<rocksdb::BoundColumnFamily<'_>>> {
-        self.db.cf_handle(cf_name)
+        self.db
+            .cf_handle(cf_name)
             .ok_or_else(|| TsdbError::ColumnFamilyNotFound(cf_name.to_string()))
     }
 
@@ -172,8 +178,9 @@ impl CfManager {
                 if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y%m%d") {
                     if date < cutoff {
                         info!("dropping expired CF: {}", cf_name);
-                        self.db.drop_cf(cf_name)
-                            .map_err(|e| TsdbError::Storage(format!("failed to drop CF {}: {}", cf_name, e)))?;
+                        self.db.drop_cf(cf_name).map_err(|e| {
+                            TsdbError::Storage(format!("failed to drop CF {}: {}", cf_name, e))
+                        })?;
                         dropped.push(cf_name.clone());
                     }
                 }

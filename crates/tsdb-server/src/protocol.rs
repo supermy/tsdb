@@ -95,7 +95,10 @@ pub enum Request {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Response {
     Ok,
-    QueryResult { columns: Vec<String>, rows: Vec<Vec<FieldValueProto>> },
+    QueryResult {
+        columns: Vec<String>,
+        rows: Vec<Vec<FieldValueProto>>,
+    },
     Databases(Vec<String>),
     Error(String),
     Pong,

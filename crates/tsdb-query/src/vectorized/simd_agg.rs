@@ -1,4 +1,4 @@
-use crate::vectorized::columnar::{ColumnarBatch, Column};
+use crate::vectorized::columnar::{Column, ColumnarBatch};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SimdAggFunc {
@@ -110,9 +110,7 @@ impl SimdAggregator {
 
         let mut results: Vec<(String, f64)> = groups
             .into_iter()
-            .filter_map(|(key, values)| {
-                Self::aggregate_f64(&values, func).map(|v| (key, v))
-            })
+            .filter_map(|(key, values)| Self::aggregate_f64(&values, func).map(|v| (key, v)))
             .collect();
 
         results.sort_by(|a, b| a.0.cmp(&b.0));
@@ -143,13 +141,22 @@ mod tests {
     #[test]
     fn test_simd_min_max() {
         let values = vec![3.0, 1.0, 4.0, 1.5, 9.0];
-        assert_eq!(SimdAggregator::aggregate_f64(&values, SimdAggFunc::Min), Some(1.0));
-        assert_eq!(SimdAggregator::aggregate_f64(&values, SimdAggFunc::Max), Some(9.0));
+        assert_eq!(
+            SimdAggregator::aggregate_f64(&values, SimdAggFunc::Min),
+            Some(1.0)
+        );
+        assert_eq!(
+            SimdAggregator::aggregate_f64(&values, SimdAggFunc::Max),
+            Some(9.0)
+        );
     }
 
     #[test]
     fn test_simd_count() {
         let values = vec![1.0, 2.0, 3.0];
-        assert_eq!(SimdAggregator::aggregate_f64(&values, SimdAggFunc::Count), Some(3.0));
+        assert_eq!(
+            SimdAggregator::aggregate_f64(&values, SimdAggFunc::Count),
+            Some(3.0)
+        );
     }
 }

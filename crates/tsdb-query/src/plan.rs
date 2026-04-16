@@ -53,7 +53,9 @@ impl Default for QueryPlanner {
 }
 
 impl QueryPlanner {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 
     /// 根据解析后的查询生成执行计划
     ///
@@ -64,8 +66,13 @@ impl QueryPlanner {
     /// - `Ok(ExecutionPlan)`: 最优执行策略
     /// - `Err(String)`: 无法确定执行策略
     pub fn plan(&self, query: &ParsedQuery) -> Result<ExecutionPlan, String> {
-        let has_agg = query.select_fields.iter().any(|f| matches!(f, SelectField::Aggregate { .. }));
-        let has_tag_filters = query.where_clause.as_ref()
+        let has_agg = query
+            .select_fields
+            .iter()
+            .any(|f| matches!(f, SelectField::Aggregate { .. }));
+        let has_tag_filters = query
+            .where_clause
+            .as_ref()
             .map(|w| !w.tag_filters.is_empty())
             .unwrap_or(false);
 

@@ -23,8 +23,8 @@
 //! 2. 查询性能：范围查询按块过滤，减少扫描量
 //! 3. 冷热分离：按日期分 CF，自然支持数据生命周期管理
 
+use std::hash::{DefaultHasher, Hash, Hasher};
 use tsdb_types::model::{DataPoint, Timestamp};
-use std::hash::{DefaultHasher, Hasher, Hash};
 
 /// 块持续时间（秒）- Block Duration in Seconds
 ///
@@ -112,9 +112,7 @@ impl RowKey {
     /// 编码后的二进制数据
     pub fn encode(&self) -> Vec<u8> {
         // 预分配容量：measurement + 2个分隔符 + tags_hash(8) + block_ts(8)
-        let mut buf = Vec::with_capacity(
-            self.measurement.len() + 8 + 8 + 2,
-        );
+        let mut buf = Vec::with_capacity(self.measurement.len() + 8 + 8 + 2);
 
         // 写入 measurement
         buf.extend_from_slice(self.measurement.as_bytes());
@@ -200,7 +198,11 @@ impl Qualifier {
     /// # 返回值
     ///
     /// 创建的 Qualifier，microsecond_offset = timestamp - block_start
-    pub fn new(field_name: impl Into<String>, timestamp: Timestamp, block_start: Timestamp) -> Self {
+    pub fn new(
+        field_name: impl Into<String>,
+        timestamp: Timestamp,
+        block_start: Timestamp,
+    ) -> Self {
         let offset_micros = (timestamp - block_start) as u64;
         Self {
             field_name: field_name.into(),

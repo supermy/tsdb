@@ -7,8 +7,8 @@
 //! - 分发：将数据点路由到对应的业务插件进行校验
 
 use crate::traits::{BusinessPlugin, QueryPlugin, StoragePlugin};
-use tsdb_types::model::DataPoint;
 use std::collections::HashMap;
+use tsdb_types::model::DataPoint;
 
 /// 插件注册表 — 管理所有已加载的插件实例
 ///
@@ -86,9 +86,15 @@ mod tests {
     struct TestBusinessPlugin;
 
     impl BusinessPlugin for TestBusinessPlugin {
-        fn name(&self) -> &str { "test" }
-        fn validate(&self, _dp: &DataPoint) -> bool { true }
-        fn default_aggregations(&self) -> Vec<String> { vec!["avg".to_string()] }
+        fn name(&self) -> &str {
+            "test"
+        }
+        fn validate(&self, _dp: &DataPoint) -> bool {
+            true
+        }
+        fn default_aggregations(&self) -> Vec<String> {
+            vec!["avg".to_string()]
+        }
     }
 
     #[test]

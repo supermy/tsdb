@@ -1,12 +1,12 @@
-pub mod worker;
 pub mod aggregator;
-pub mod store;
-pub mod pipeline;
 pub mod key_codec;
+pub mod pipeline;
+pub mod store;
 pub mod timeseries;
+pub mod worker;
 
 pub use aggregator::Aggregator;
-pub use store::{AggregationStore, AggregationStoreManager};
-pub use pipeline::{LightAggregationPipeline, PipelineConfig};
 pub use key_codec::AggregationKey;
+pub use pipeline::{LightAggregationPipeline, PipelineConfig};
+pub use store::{AggregationStore, AggregationStoreManager};
 pub use timeseries::TimeseriesGenerator;

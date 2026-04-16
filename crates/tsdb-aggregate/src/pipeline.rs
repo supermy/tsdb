@@ -18,11 +18,11 @@
 
 use crate::aggregator::{Aggregator, TimeDimension};
 use crate::store::AggregationStoreManager;
-use tsdb_types::model::DataPoint;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tracing::{info, debug};
+use tracing::{debug, info};
+use tsdb_types::model::DataPoint;
 
 /// 轻度汇总管道配置
 #[derive(Debug, Clone)]
@@ -40,7 +40,12 @@ impl Default for PipelineConfig {
         Self {
             buffer_size: 10000,
             flush_interval_secs: 60,
-            dimensions: vec![TimeDimension::Hour, TimeDimension::Day, TimeDimension::Week, TimeDimension::Month],
+            dimensions: vec![
+                TimeDimension::Hour,
+                TimeDimension::Day,
+                TimeDimension::Week,
+                TimeDimension::Month,
+            ],
         }
     }
 }
@@ -132,13 +137,16 @@ impl LightAggregationPipeline {
             let store = self.store_manager.get_store(business)?;
 
             for &dim in &self.config.dimensions {
-                let results = aggregator.finalize(
-                    bucket_key.split(':').nth(1).unwrap_or("unknown"),
-                    dim,
-                );
+                let results =
+                    aggregator.finalize(bucket_key.split(':').nth(1).unwrap_or("unknown"), dim);
                 if !results.is_empty() {
                     store.write_batch(&results)?;
-                    debug!("flushed {} {} results for {}", results.len(), dim.name(), bucket_key);
+                    debug!(
+                        "flushed {} {} results for {}",
+                        results.len(),
+                        dim.name(),
+                        bucket_key
+                    );
                 }
             }
 
@@ -189,7 +197,10 @@ mod tests {
 
         for i in 0..6 {
             let mut dp = DataPoint::new("cpu", (1713158400 + i * 30) * 1_000_000);
-            dp.fields.insert("usage".to_string(), tsdb_types::model::FieldValue::Float(50.0 + i as f64));
+            dp.fields.insert(
+                "usage".to_string(),
+                tsdb_types::model::FieldValue::Float(50.0 + i as f64),
+            );
             pipeline.on_write("test", &dp);
         }
 
@@ -208,7 +219,10 @@ mod tests {
         let pipeline = LightAggregationPipeline::new(config, store_mgr);
 
         let mut dp = DataPoint::new("mem", 1_713_158_400_000_000);
-        dp.fields.insert("used".to_string(), tsdb_types::model::FieldValue::Float(60.0));
+        dp.fields.insert(
+            "used".to_string(),
+            tsdb_types::model::FieldValue::Float(60.0),
+        );
         pipeline.on_write("iot", &dp);
 
         assert_eq!(pipeline.bucket_count(), 1);

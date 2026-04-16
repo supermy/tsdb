@@ -244,10 +244,12 @@ impl DataPoint {
     ///
     /// 序列键字符串
     pub fn series_key(&self) -> String {
-        let mut parts: Vec<String> = self.tags.iter()
+        let mut parts: Vec<String> = self
+            .tags
+            .iter()
             .map(|(k, v)| format!("{}={}", k, v))
             .collect();
-        parts.sort();  // 排序保证一致性
+        parts.sort(); // 排序保证一致性
         format!("{},{}", self.measurement, parts.join(","))
     }
 }

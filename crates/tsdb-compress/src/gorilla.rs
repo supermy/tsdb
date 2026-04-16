@@ -234,7 +234,11 @@ impl GorillaDecoder {
         if data.len() < 4 {
             return Err(CompressError::Decode("data too short".into()));
         }
-        let count = u32::from_be_bytes(data[0..4].try_into().map_err(|_| CompressError::Decode("invalid count".into()))?);
+        let count = u32::from_be_bytes(
+            data[0..4]
+                .try_into()
+                .map_err(|_| CompressError::Decode("invalid count".into()))?,
+        );
         Ok(Self {
             data: data[4..].to_vec(),
             byte_pos: 0,
@@ -298,7 +302,10 @@ impl GorillaDecoder {
 
         let leading = self.read_bits(6)? as u8;
         if leading > 31 {
-            return Err(CompressError::Decode(format!("invalid leading zeros: {}", leading)));
+            return Err(CompressError::Decode(format!(
+                "invalid leading zeros: {}",
+                leading
+            )));
         }
         let meaningful_bits = self.read_bits(6)? as u8 + 1;
         let trailing = 64 - leading - meaningful_bits;
@@ -382,7 +389,12 @@ mod tests {
 
         assert_eq!(decoded.len(), values.len());
         for (orig, dec) in values.iter().zip(decoded.iter()) {
-            assert!((orig - dec).abs() < f64::EPSILON, "expected {} got {}", orig, dec);
+            assert!(
+                (orig - dec).abs() < f64::EPSILON,
+                "expected {} got {}",
+                orig,
+                dec
+            );
         }
     }
 

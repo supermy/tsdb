@@ -15,10 +15,10 @@
 //!
 
 use crate::aggregator::{Aggregator, TimeDimension};
-use tsdb_types::model::DataPoint;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tracing::{info, error};
+use std::sync::Arc;
+use tracing::{error, info};
+use tsdb_types::model::DataPoint;
 
 /// 异步聚合工作器 — 在后台线程中持续执行聚合任务
 ///
@@ -46,11 +46,7 @@ impl Worker {
     /// - `pull_url`: NNG PULL 协议地址（如 `"inproc://aggregate"`）
     /// - `pub_url`: NNG PUB 协议地址（如 `"tcp://0.0.0.0:9913"`）
     /// - `time_dimensions`: 需要计算的聚合时间维度列表
-    pub fn new(
-        pull_url: &str,
-        pub_url: &str,
-        time_dimensions: Vec<TimeDimension>,
-    ) -> Self {
+    pub fn new(pull_url: &str, pub_url: &str, time_dimensions: Vec<TimeDimension>) -> Self {
         Self {
             pull_url: pull_url.to_string(),
             pub_url: pub_url.to_string(),

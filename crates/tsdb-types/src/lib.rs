@@ -1,3 +1,3 @@
 pub mod model;
 
-pub use model::{FieldValue, DataPoint, Measurement, SeriesId, Timestamp, Tags, Fields, FieldType};
+pub use model::{DataPoint, FieldType, FieldValue, Fields, Measurement, SeriesId, Tags, Timestamp};

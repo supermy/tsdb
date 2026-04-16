@@ -1,7 +1,7 @@
 pub mod chart;
-pub mod svg;
 pub mod series;
+pub mod svg;
 
-pub use chart::{TimeSeriesChart, ChartConfig, ChartType};
-pub use svg::SvgRenderer;
+pub use chart::{ChartConfig, ChartType, TimeSeriesChart};
 pub use series::TimeSeries;
+pub use svg::SvgRenderer;

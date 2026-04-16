@@ -11,7 +11,7 @@
 
 use crate::aggregator::{AggregationResult, TimeDimension};
 use crate::store::AggregationStore;
-use tsdb_chart::{TimeSeriesChart, ChartConfig, ChartType, TimeSeries, SvgRenderer};
+use tsdb_chart::{ChartConfig, ChartType, SvgRenderer, TimeSeries, TimeSeriesChart};
 
 pub struct TimeseriesGenerator;
 
@@ -195,9 +195,16 @@ mod tests {
         let store = AggregationStore::open(dir.path(), "test_trend").unwrap();
 
         let svg = TimeseriesGenerator::generate_trend(
-            &store, "test", "cpu", TimeDimension::Hour,
-            0, i64::MAX, ChartType::Line, "CPU Trend",
-        ).unwrap();
+            &store,
+            "test",
+            "cpu",
+            TimeDimension::Hour,
+            0,
+            i64::MAX,
+            ChartType::Line,
+            "CPU Trend",
+        )
+        .unwrap();
 
         assert!(svg.contains("<svg"));
         assert!(svg.contains("no data"));
@@ -223,9 +230,16 @@ mod tests {
         }
 
         let svg = TimeseriesGenerator::generate_trend(
-            &store, "test", "cpu", TimeDimension::Hour,
-            0, i64::MAX, ChartType::Line, "CPU Hourly Trend",
-        ).unwrap();
+            &store,
+            "test",
+            "cpu",
+            TimeDimension::Hour,
+            0,
+            i64::MAX,
+            ChartType::Line,
+            "CPU Hourly Trend",
+        )
+        .unwrap();
 
         assert!(svg.contains("<svg"));
         assert!(!svg.contains("no data"));
@@ -251,9 +265,16 @@ mod tests {
         }
 
         let svg = TimeseriesGenerator::generate_trend(
-            &store, "test", "mem", TimeDimension::Day,
-            0, i64::MAX, ChartType::Area, "Memory Daily Trend",
-        ).unwrap();
+            &store,
+            "test",
+            "mem",
+            TimeDimension::Day,
+            0,
+            i64::MAX,
+            ChartType::Area,
+            "Memory Daily Trend",
+        )
+        .unwrap();
 
         assert!(svg.contains("<svg"));
     }

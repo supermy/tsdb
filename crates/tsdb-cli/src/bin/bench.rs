@@ -8,18 +8,21 @@
 //! - 轻度汇总管道吞吐量
 //! - 多业务DB隔离开销
 
-use tsdb_core::storage::{StorageEngine, cf_manager::CfConfig, MultiDbManager};
-use tsdb_compress::codec::{BlockCodec, Codec, DataBlock};
-use tsdb_compress::gorilla::GorillaEncoder;
-use tsdb_compress::delta::DeltaEncoder;
-use tsdb_compress::dictionary::DictionaryEncoder;
-use tsdb_index::{IndexManager, inverted::InvertedIndex};
-use tsdb_aggregate::{pipeline::LightAggregationPipeline, pipeline::PipelineConfig, store::AggregationStoreManager, aggregator::TimeDimension};
-use tsdb_query::QueryEngine;
-use tsdb_types::model::{DataPoint, FieldValue, Tags};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
+use tsdb_aggregate::{
+    aggregator::TimeDimension, pipeline::LightAggregationPipeline, pipeline::PipelineConfig,
+    store::AggregationStoreManager,
+};
+use tsdb_compress::codec::{BlockCodec, Codec, DataBlock};
+use tsdb_compress::delta::DeltaEncoder;
+use tsdb_compress::dictionary::DictionaryEncoder;
+use tsdb_compress::gorilla::GorillaEncoder;
+use tsdb_core::storage::{cf_manager::CfConfig, MultiDbManager, StorageEngine};
+use tsdb_index::{inverted::InvertedIndex, IndexManager};
+use tsdb_query::QueryEngine;
+use tsdb_types::model::{DataPoint, FieldValue, Tags};
 
 fn main() -> anyhow::Result<()> {
     println!("╔══════════════════════════════════════════════════════════════╗");
@@ -60,7 +63,11 @@ fn main() -> anyhow::Result<()> {
 }
 
 /// 生成 TSBS DevOps 风格的合成数据点
-fn generate_devops_points(device_count: usize, interval_secs: i64, duration_hours: i64) -> Vec<DataPoint> {
+fn generate_devops_points(
+    device_count: usize,
+    interval_secs: i64,
+    duration_hours: i64,
+) -> Vec<DataPoint> {
     let base_ts: i64 = 1_704_067_200_000_000;
     let points_per_device = (duration_hours * 3600) / interval_secs;
     let mut points = Vec::with_capacity(device_count * points_per_device as usize);
@@ -69,20 +76,55 @@ fn generate_devops_points(device_count: usize, interval_secs: i64, duration_hour
         for point_idx in 0..points_per_device {
             let ts = base_ts + point_idx * interval_secs * 1_000_000;
             let mut dp = DataPoint::new("cpu", ts);
-            dp.tags.insert("hostname".to_string(), format!("host_{}", device_id));
-            dp.tags.insert("region".to_string(), format!("region_{}", device_id % 5));
-            dp.tags.insert("datacenter".to_string(), format!("dc_{}", device_id % 3));
-            dp.tags.insert("rack".to_string(), format!("rack_{}", device_id % 10));
+            dp.tags
+                .insert("hostname".to_string(), format!("host_{}", device_id));
+            dp.tags
+                .insert("region".to_string(), format!("region_{}", device_id % 5));
+            dp.tags
+                .insert("datacenter".to_string(), format!("dc_{}", device_id % 3));
+            dp.tags
+                .insert("rack".to_string(), format!("rack_{}", device_id % 10));
 
-            dp.fields.insert("usage_user".to_string(), FieldValue::Float((device_id as f64 * 0.3 + (point_idx as f64 * 0.01).sin() * 20.0 + 30.0).clamp(0.0, 100.0)));
-            dp.fields.insert("usage_system".to_string(), FieldValue::Float((device_id as f64 * 0.1 + (point_idx as f64 * 0.02).cos() * 10.0 + 10.0).clamp(0.0, 100.0)));
-            dp.fields.insert("usage_idle".to_string(), FieldValue::Float((60.0 + (point_idx as f64 * 0.005).sin() * 15.0).clamp(0.0, 100.0)));
-            dp.fields.insert("usage_nice".to_string(), FieldValue::Float(device_id as f64 * 0.05 % 5.0));
-            dp.fields.insert("usage_iowait".to_string(), FieldValue::Float(device_id as f64 * 0.02 % 3.0));
-            dp.fields.insert("usage_steal".to_string(), FieldValue::Float(device_id as f64 * 0.01 % 2.0));
-            dp.fields.insert("usage_guest".to_string(), FieldValue::Float(device_id as f64 * 0.005 % 1.0));
-            dp.fields.insert("usage_guest_nice".to_string(), FieldValue::Float(0.1));
-            dp.fields.insert("count".to_string(), FieldValue::Integer(point_idx));
+            dp.fields.insert(
+                "usage_user".to_string(),
+                FieldValue::Float(
+                    (device_id as f64 * 0.3 + (point_idx as f64 * 0.01).sin() * 20.0 + 30.0)
+                        .clamp(0.0, 100.0),
+                ),
+            );
+            dp.fields.insert(
+                "usage_system".to_string(),
+                FieldValue::Float(
+                    (device_id as f64 * 0.1 + (point_idx as f64 * 0.02).cos() * 10.0 + 10.0)
+                        .clamp(0.0, 100.0),
+                ),
+            );
+            dp.fields.insert(
+                "usage_idle".to_string(),
+                FieldValue::Float(
+                    (60.0 + (point_idx as f64 * 0.005).sin() * 15.0).clamp(0.0, 100.0),
+                ),
+            );
+            dp.fields.insert(
+                "usage_nice".to_string(),
+                FieldValue::Float(device_id as f64 * 0.05 % 5.0),
+            );
+            dp.fields.insert(
+                "usage_iowait".to_string(),
+                FieldValue::Float(device_id as f64 * 0.02 % 3.0),
+            );
+            dp.fields.insert(
+                "usage_steal".to_string(),
+                FieldValue::Float(device_id as f64 * 0.01 % 2.0),
+            );
+            dp.fields.insert(
+                "usage_guest".to_string(),
+                FieldValue::Float(device_id as f64 * 0.005 % 1.0),
+            );
+            dp.fields
+                .insert("usage_guest_nice".to_string(), FieldValue::Float(0.1));
+            dp.fields
+                .insert("count".to_string(), FieldValue::Integer(point_idx));
 
             points.push(dp);
         }
@@ -109,7 +151,12 @@ fn bench_write_throughput(engine: &StorageEngine) -> anyhow::Result<()> {
     }
     let single_elapsed = start.elapsed();
     let single_rate = single_count as f64 / single_elapsed.as_secs_f64();
-    println!("  单点写入: {:.0} points/sec ({} 点, {:.2}ms)", single_rate, single_count, single_elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "  单点写入: {:.0} points/sec ({} 点, {:.2}ms)",
+        single_rate,
+        single_count,
+        single_elapsed.as_secs_f64() * 1000.0
+    );
 
     // 1b. 批量写入 (batch=1000)
     let batch_size = 1000;
@@ -119,7 +166,12 @@ fn bench_write_throughput(engine: &StorageEngine) -> anyhow::Result<()> {
     }
     let batch_elapsed = start.elapsed();
     let batch_rate = total as f64 / batch_elapsed.as_secs_f64();
-    println!("  批量写入: {:.0} points/sec (batch={}, {:.2}ms)", batch_rate, batch_size, batch_elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "  批量写入: {:.0} points/sec (batch={}, {:.2}ms)",
+        batch_rate,
+        batch_size,
+        batch_elapsed.as_secs_f64() * 1000.0
+    );
 
     // 1c. MergedBlock 写入
     let start = Instant::now();
@@ -128,19 +180,30 @@ fn bench_write_throughput(engine: &StorageEngine) -> anyhow::Result<()> {
     }
     let merged_elapsed = start.elapsed();
     let merged_rate = total as f64 / merged_elapsed.as_secs_f64();
-    println!("  MergedBlock写入: {:.0} points/sec ({:.2}ms)", merged_rate, merged_elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "  MergedBlock写入: {:.0} points/sec ({:.2}ms)",
+        merged_rate,
+        merged_elapsed.as_secs_f64() * 1000.0
+    );
 
     // 1d. 大规模写入 (1000设备 × 4小时)
     let large_points = generate_devops_points(1000, 10, 4);
     let large_total = large_points.len();
-    println!("\n  大规模测试: {} 设备 × 4小时 = {} 数据点", 1000, large_total);
+    println!(
+        "\n  大规模测试: {} 设备 × 4小时 = {} 数据点",
+        1000, large_total
+    );
     let start = Instant::now();
     for chunk in large_points.chunks(batch_size) {
         engine.write_batch(chunk)?;
     }
     let large_elapsed = start.elapsed();
     let large_rate = large_total as f64 / large_elapsed.as_secs_f64();
-    println!("  大规模批量写入: {:.0} points/sec ({:.2}s)", large_rate, large_elapsed.as_secs_f64());
+    println!(
+        "  大规模批量写入: {:.0} points/sec ({:.2}s)",
+        large_rate,
+        large_elapsed.as_secs_f64()
+    );
 
     println!();
     Ok(())
@@ -158,33 +221,54 @@ fn bench_query_latency(engine: &StorageEngine) -> anyhow::Result<()> {
     let start = Instant::now();
     let results = engine.read_range("cpu", &Tags::new(), base_ts, base_ts + 60_000_000)?;
     let short_time = start.elapsed();
-    println!("  短范围查询(1min): {} 结果, {:.2}ms", results.len(), short_time.as_secs_f64() * 1000.0);
+    println!(
+        "  短范围查询(1min): {} 结果, {:.2}ms",
+        results.len(),
+        short_time.as_secs_f64() * 1000.0
+    );
 
     // 2b. 中范围查询 (1小时)
     let start = Instant::now();
     let results = engine.read_range("cpu", &Tags::new(), base_ts, base_ts + 3_600_000_000)?;
     let mid_time = start.elapsed();
-    println!("  中范围查询(1h):   {} 结果, {:.2}ms", results.len(), mid_time.as_secs_f64() * 1000.0);
+    println!(
+        "  中范围查询(1h):   {} 结果, {:.2}ms",
+        results.len(),
+        mid_time.as_secs_f64() * 1000.0
+    );
 
     // 2c. 长范围查询 (4小时)
     let start = Instant::now();
     let results = engine.read_range("cpu", &Tags::new(), base_ts, base_ts + 14_400_000_000)?;
     let long_time = start.elapsed();
-    println!("  长范围查询(4h):   {} 结果, {:.2}ms", results.len(), long_time.as_secs_f64() * 1000.0);
+    println!(
+        "  长范围查询(4h):   {} 结果, {:.2}ms",
+        results.len(),
+        long_time.as_secs_f64() * 1000.0
+    );
 
     // 2d. SQL 查询
     let query_engine = QueryEngine::new();
     let sql_tests = vec![
         ("简单查询", "SELECT * FROM cpu"),
         ("聚合查询", "SELECT AVG(usage_user) FROM cpu"),
-        ("多聚合查询", "SELECT AVG(usage_user), MAX(usage_system), MIN(usage_idle) FROM cpu"),
+        (
+            "多聚合查询",
+            "SELECT AVG(usage_user), MAX(usage_system), MIN(usage_idle) FROM cpu",
+        ),
     ];
     for (name, sql) in sql_tests {
         let start = Instant::now();
         let result = query_engine.execute(sql, engine);
         let elapsed = start.elapsed();
         match result {
-            Ok(r) => println!("  SQL {}: {} 列 × {} 行, {:.2}ms", name, r.columns.len(), r.rows.len(), elapsed.as_secs_f64() * 1000.0),
+            Ok(r) => println!(
+                "  SQL {}: {} 列 × {} 行, {:.2}ms",
+                name,
+                r.columns.len(),
+                r.rows.len(),
+                elapsed.as_secs_f64() * 1000.0
+            ),
             Err(e) => println!("  SQL {}: 错误 - {}", name, e),
         }
     }
@@ -202,41 +286,79 @@ fn bench_compression() -> anyhow::Result<()> {
     let n = 10000;
 
     // 3a. Delta 时间戳压缩
-    let timestamps: Vec<i64> = (0..n).map(|i| 1_704_067_200_000_000 + i as i64 * 10_000_000).collect();
+    let timestamps: Vec<i64> = (0..n)
+        .map(|i| 1_704_067_200_000_000 + i as i64 * 10_000_000)
+        .collect();
     let raw_ts_size = timestamps.len() * 8;
     let mut delta_enc = DeltaEncoder::new();
-    for &ts in &timestamps { delta_enc.encode(ts)?; }
+    for &ts in &timestamps {
+        delta_enc.encode(ts)?;
+    }
     let compressed_ts = delta_enc.finish();
     let ts_ratio = raw_ts_size as f64 / compressed_ts.len() as f64;
-    println!("  Delta时间戳: {}B → {}B (压缩比 {:.1}:1)", raw_ts_size, compressed_ts.len(), ts_ratio);
+    println!(
+        "  Delta时间戳: {}B → {}B (压缩比 {:.1}:1)",
+        raw_ts_size,
+        compressed_ts.len(),
+        ts_ratio
+    );
 
     // 3b. Gorilla 浮点压缩
-    let float_values: Vec<f64> = (0..n).map(|i| 50.0 + (i as f64 * 0.01).sin() * 20.0).collect();
+    let float_values: Vec<f64> = (0..n)
+        .map(|i| 50.0 + (i as f64 * 0.01).sin() * 20.0)
+        .collect();
     let raw_float_size = float_values.len() * 8;
     let mut gorilla_enc = GorillaEncoder::new();
-    for &v in &float_values { gorilla_enc.encode(v)?; }
+    for &v in &float_values {
+        gorilla_enc.encode(v)?;
+    }
     let compressed_float = gorilla_enc.finish();
     let float_ratio = raw_float_size as f64 / compressed_float.len() as f64;
-    println!("  Gorilla浮点: {}B → {}B (压缩比 {:.1}:1)", raw_float_size, compressed_float.len(), float_ratio);
+    println!(
+        "  Gorilla浮点: {}B → {}B (压缩比 {:.1}:1)",
+        raw_float_size,
+        compressed_float.len(),
+        float_ratio
+    );
 
     // 3c. 字典编码字符串压缩
-    let strings: Vec<&str> = (0..n).map(|i| ["host_0", "host_1", "host_2", "region_us", "region_eu"][i % 5]).collect();
+    let strings: Vec<&str> = (0..n)
+        .map(|i| ["host_0", "host_1", "host_2", "region_us", "region_eu"][i % 5])
+        .collect();
     let raw_str_size: usize = strings.iter().map(|s| s.len()).sum();
     let mut dict_enc = DictionaryEncoder::new();
-    for s in &strings { dict_enc.encode(s); }
+    for s in &strings {
+        dict_enc.encode(s);
+    }
     let (compressed_str, _) = dict_enc.finish();
     let str_ratio = raw_str_size as f64 / compressed_str.len() as f64;
-    println!("  字典编码:    {}B → {}B (压缩比 {:.1}:1)", raw_str_size, compressed_str.len(), str_ratio);
+    println!(
+        "  字典编码:    {}B → {}B (压缩比 {:.1}:1)",
+        raw_str_size,
+        compressed_str.len(),
+        str_ratio
+    );
 
     // 3d. BlockCodec 完整块压缩
     let mut block = DataBlock {
         timestamps: timestamps.clone(),
         fields: std::collections::HashMap::new(),
     };
-    block.fields.insert("usage_user".to_string(), float_values.iter().map(|&v| FieldValue::Float(v)).collect());
-    block.fields.insert("count".to_string(), (0..n).map(|i| FieldValue::Integer(i as i64)).collect());
+    block.fields.insert(
+        "usage_user".to_string(),
+        float_values.iter().map(|&v| FieldValue::Float(v)).collect(),
+    );
+    block.fields.insert(
+        "count".to_string(),
+        (0..n).map(|i| FieldValue::Integer(i as i64)).collect(),
+    );
 
-    let raw_block_size = block.timestamps.len() * 8 + block.fields.values().map(|v: &Vec<FieldValue>| v.len() * 8).sum::<usize>();
+    let raw_block_size = block.timestamps.len() * 8
+        + block
+            .fields
+            .values()
+            .map(|v: &Vec<FieldValue>| v.len() * 8)
+            .sum::<usize>();
     let codec = BlockCodec;
     let start = Instant::now();
     let compressed_block = codec.compress_block(&block)?;
@@ -247,8 +369,17 @@ fn bench_compression() -> anyhow::Result<()> {
     let _decompressed = codec.decompress_block(&compressed_block)?;
     let decompress_time = start.elapsed();
 
-    println!("  BlockCodec:  {}B → ~{}B (压缩比 {:.1}:1)", raw_block_size, compressed_block.timestamps.len(), block_ratio);
-    println!("  压缩耗时: {:.2}ms, 解压耗时: {:.2}ms", compress_time.as_secs_f64() * 1000.0, decompress_time.as_secs_f64() * 1000.0);
+    println!(
+        "  BlockCodec:  {}B → ~{}B (压缩比 {:.1}:1)",
+        raw_block_size,
+        compressed_block.timestamps.len(),
+        block_ratio
+    );
+    println!(
+        "  压缩耗时: {:.2}ms, 解压耗时: {:.2}ms",
+        compress_time.as_secs_f64() * 1000.0,
+        decompress_time.as_secs_f64() * 1000.0
+    );
 
     println!();
     Ok(())
@@ -284,14 +415,28 @@ fn bench_vectorized_vs_scalar(engine: &StorageEngine) -> anyhow::Result<()> {
     let batch = tsdb_query::vectorized::columnar::ColumnarBatch::from_data_points(&results);
     let start = Instant::now();
     let vec_result = tsdb_query::VectorizedEngine::execute_aggregate(
-        &batch, "usage_user", tsdb_query::vectorized::simd_agg::SimdAggFunc::Avg);
+        &batch,
+        "usage_user",
+        tsdb_query::vectorized::simd_agg::SimdAggFunc::Avg,
+    );
     let vec_time = start.elapsed();
 
     println!("  数据点数: {}", results.len());
-    println!("  标量聚合:  avg={:.4}, {:.2}ms", scalar_avg, scalar_time.as_secs_f64() * 1000.0);
-    println!("  向量化聚合: avg={:?}, {:.2}ms", vec_result, vec_time.as_secs_f64() * 1000.0);
+    println!(
+        "  标量聚合:  avg={:.4}, {:.2}ms",
+        scalar_avg,
+        scalar_time.as_secs_f64() * 1000.0
+    );
+    println!(
+        "  向量化聚合: avg={:?}, {:.2}ms",
+        vec_result,
+        vec_time.as_secs_f64() * 1000.0
+    );
     if vec_time.as_nanos() > 0 {
-        println!("  加速比: {:.1}x", scalar_time.as_secs_f64() / vec_time.as_secs_f64());
+        println!(
+            "  加速比: {:.1}x",
+            scalar_time.as_secs_f64() / vec_time.as_secs_f64()
+        );
     }
 
     println!();
@@ -328,9 +473,16 @@ fn bench_aggregation_pipeline() -> anyhow::Result<()> {
     let flush_time = start.elapsed();
 
     println!("  数据点: {}", total);
-    println!("  累积吞吐: {:.0} points/sec ({:.2}ms)", accumulate_rate, accumulate_time.as_secs_f64() * 1000.0);
+    println!(
+        "  累积吞吐: {:.0} points/sec ({:.2}ms)",
+        accumulate_rate,
+        accumulate_time.as_secs_f64() * 1000.0
+    );
     println!("  Flush耗时: {:.2}ms", flush_time.as_secs_f64() * 1000.0);
-    println!("  管道总开销: {:.2}%", accumulate_time.as_secs_f64() / (total as f64 / 100000.0) * 100.0);
+    println!(
+        "  管道总开销: {:.2}%",
+        accumulate_time.as_secs_f64() / (total as f64 / 100000.0) * 100.0
+    );
 
     println!();
     Ok(())
@@ -353,7 +505,10 @@ fn bench_multi_db_isolation() -> anyhow::Result<()> {
         manager.create_database(name)?;
     }
     let create_time = start.elapsed();
-    println!("  创建5个DB实例: {:.2}ms", create_time.as_secs_f64() * 1000.0);
+    println!(
+        "  创建5个DB实例: {:.2}ms",
+        create_time.as_secs_f64() * 1000.0
+    );
 
     // 跨业务写入
     let points = generate_devops_points(10, 10, 1);
@@ -375,7 +530,10 @@ fn bench_multi_db_isolation() -> anyhow::Result<()> {
     let single_write_time = start.elapsed();
     let single_rate = 100.0 / single_write_time.as_secs_f64();
     println!("  单DB写入:   {:.0} points/sec", single_rate);
-    println!("  隔离开销:   {:.1}%", (1.0 - cross_rate / single_rate).abs() * 100.0);
+    println!(
+        "  隔离开销:   {:.1}%",
+        (1.0 - cross_rate / single_rate).abs() * 100.0
+    );
 
     println!();
     Ok(())
@@ -393,18 +551,29 @@ fn bench_index_performance() -> anyhow::Result<()> {
 
     let start = Instant::now();
     for i in 0..n {
-        inv_idx.add_series(i as u64, &[
-            ("host".to_string(), format!("host_{}", i % 100)),
-            ("region".to_string(), format!("region_{}", i % 5)),
-        ]);
+        inv_idx.add_series(
+            i as u64,
+            &[
+                ("host".to_string(), format!("host_{}", i % 100)),
+                ("region".to_string(), format!("region_{}", i % 5)),
+            ],
+        );
     }
     let insert_time = start.elapsed();
-    println!("  倒排索引插入: {} 条, {:.2}ms", n, insert_time.as_secs_f64() * 1000.0);
+    println!(
+        "  倒排索引插入: {} 条, {:.2}ms",
+        n,
+        insert_time.as_secs_f64() * 1000.0
+    );
 
     let start = Instant::now();
     let result = inv_idx.query_exact("host", "host_0");
     let exact_time = start.elapsed();
-    println!("  精确查询: {} 匹配, {:.2}μs", result.len(), exact_time.as_secs_f64() * 1_000_000.0);
+    println!(
+        "  精确查询: {} 匹配, {:.2}μs",
+        result.len(),
+        exact_time.as_secs_f64() * 1_000_000.0
+    );
 
     let start = Instant::now();
     let result = inv_idx.query_intersection(&[
@@ -412,13 +581,21 @@ fn bench_index_performance() -> anyhow::Result<()> {
         ("region".to_string(), "region_0".to_string()),
     ]);
     let intersect_time = start.elapsed();
-    println!("  交集查询: {} 匹配, {:.2}μs", result.len(), intersect_time.as_secs_f64() * 1_000_000.0);
+    println!(
+        "  交集查询: {} 匹配, {:.2}μs",
+        result.len(),
+        intersect_time.as_secs_f64() * 1_000_000.0
+    );
 
     // 序列化/反序列化
     let start = Instant::now();
     let serialized = inv_idx.serialize();
     let ser_time = start.elapsed();
-    println!("  序列化: {}B, {:.2}ms", serialized.len(), ser_time.as_secs_f64() * 1000.0);
+    println!(
+        "  序列化: {}B, {:.2}ms",
+        serialized.len(),
+        ser_time.as_secs_f64() * 1000.0
+    );
 
     let start = Instant::now();
     let _deserialized = InvertedIndex::deserialize(&serialized);
@@ -431,10 +608,19 @@ fn bench_index_performance() -> anyhow::Result<()> {
     for i in 0..n {
         let mut tags = BTreeMap::new();
         tags.insert("host".to_string(), format!("host_{}", i % 100));
-        idx_mgr.index_data_point("cpu", &tags, 1_704_067_200_000_000 + i as i64 * 10_000_000, i as u64);
+        idx_mgr.index_data_point(
+            "cpu",
+            &tags,
+            1_704_067_200_000_000 + i as i64 * 10_000_000,
+            i as u64,
+        );
     }
     let idx_time = start.elapsed();
-    println!("  IndexManager索引: {} 点, {:.2}ms", n, idx_time.as_secs_f64() * 1000.0);
+    println!(
+        "  IndexManager索引: {} 点, {:.2}ms",
+        n,
+        idx_time.as_secs_f64() * 1000.0
+    );
 
     println!();
     Ok(())

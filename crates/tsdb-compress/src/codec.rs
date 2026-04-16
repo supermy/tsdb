@@ -28,12 +28,12 @@
 //! | Boolean 标志 | Bit-packing | 8:1 |
 //!
 
-use crate::delta::{DeltaEncoder, DeltaDecoder};
-use crate::gorilla::{GorillaEncoder, GorillaDecoder};
-use crate::dictionary::{DictionaryEncoder, DictionaryDecoder};
+use crate::delta::{DeltaDecoder, DeltaEncoder};
+use crate::dictionary::{DictionaryDecoder, DictionaryEncoder};
 use crate::error::{CompressError, CompressResult};
-use tsdb_types::model::FieldValue;
+use crate::gorilla::{GorillaDecoder, GorillaEncoder};
 use std::collections::HashMap;
+use tsdb_types::model::FieldValue;
 
 /// 块编解码器 trait — 定义压缩/解压的统一接口
 ///
@@ -210,7 +210,11 @@ impl Codec for BlockCodec {
                 let mut values = Vec::new();
                 for chunk in data.chunks(chunk_size) {
                     if chunk.len() == 8 {
-                        let v = i64::from_be_bytes(chunk.try_into().map_err(|_| CompressError::Decode("invalid int".into()))?);
+                        let v = i64::from_be_bytes(
+                            chunk
+                                .try_into()
+                                .map_err(|_| CompressError::Decode("invalid int".into()))?,
+                        );
                         values.push(FieldValue::Integer(v));
                     }
                 }
@@ -224,7 +228,11 @@ impl Codec for BlockCodec {
                 let mut values = Vec::new();
                 for chunk in data.chunks(4) {
                     if chunk.len() == 4 {
-                        let id = u32::from_be_bytes(chunk.try_into().map_err(|_| CompressError::Decode("invalid string id".into()))?);
+                        let id = u32::from_be_bytes(
+                            chunk
+                                .try_into()
+                                .map_err(|_| CompressError::Decode("invalid string id".into()))?,
+                        );
                         if let Some(s) = decoder.decode(id) {
                             values.push(FieldValue::String(s.to_string()));
                         }
@@ -248,16 +256,22 @@ mod tests {
             timestamps: vec![1_000_000_000, 1_000_030_000, 1_000_060_000],
             fields: {
                 let mut m = HashMap::new();
-                m.insert("cpu".to_string(), vec![
-                    FieldValue::Float(0.5),
-                    FieldValue::Float(0.6),
-                    FieldValue::Float(0.7),
-                ]);
-                m.insert("count".to_string(), vec![
-                    FieldValue::Integer(10),
-                    FieldValue::Integer(20),
-                    FieldValue::Integer(30),
-                ]);
+                m.insert(
+                    "cpu".to_string(),
+                    vec![
+                        FieldValue::Float(0.5),
+                        FieldValue::Float(0.6),
+                        FieldValue::Float(0.7),
+                    ],
+                );
+                m.insert(
+                    "count".to_string(),
+                    vec![
+                        FieldValue::Integer(10),
+                        FieldValue::Integer(20),
+                        FieldValue::Integer(30),
+                    ],
+                );
                 m
             },
         };

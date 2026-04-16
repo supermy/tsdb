@@ -18,19 +18,21 @@ use tsdb_types::model::DataPoint;
 pub trait StoragePlugin: Send + Sync {
     /// 返回插件唯一名称（用于注册和日志标识）
     fn name(&self) -> &str;
-    
+
     /// 写入单个数据点到存储后端
     ///
     /// # 参数
     /// - `dp`: 待写入的数据点
     fn write(&self, dp: &DataPoint) -> Result<(), String>;
-    
+
     /// 批量写入多个数据点（性能优化路径）
     ///
     /// # 参数
     /// - `dps`: 待批量写入的数据点列表
     fn write_batch(&self, dps: &[DataPoint]) -> Result<(), String> {
-        for dp in dps { self.write(dp)?; }
+        for dp in dps {
+            self.write(dp)?;
+        }
         Ok(())
     }
 }
@@ -41,7 +43,7 @@ pub trait StoragePlugin: Send + Sync {
 pub trait QueryPlugin: Send + Sync {
     /// 返回插件唯一名称
     fn name(&self) -> &str;
-    
+
     /// 执行自定义查询并返回 JSON 格式的结果
     ///
     /// # 参数
@@ -56,7 +58,7 @@ pub trait QueryPlugin: Send + Sync {
 pub trait BusinessPlugin: Send + Sync {
     /// 返回插件唯一名称
     fn name(&self) -> &str;
-    
+
     /// 校验数据点是否符合业务规则
     ///
     /// # 参数
@@ -66,7 +68,7 @@ pub trait BusinessPlugin: Send + Sync {
     /// - `true`: 数据合法，允许写入
     /// - `false`: 数据不合规，拒绝写入
     fn validate(&self, dp: &DataPoint) -> bool;
-    
+
     /// 返回该业务域推荐的默认聚合函数列表
     fn default_aggregations(&self) -> Vec<String>;
 }

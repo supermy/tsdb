@@ -271,7 +271,10 @@ impl InvertedIndex {
             series_tags.insert(id, tags);
         }
 
-        Some(Self { postings, series_tags })
+        Some(Self {
+            postings,
+            series_tags,
+        })
     }
 }
 
@@ -282,18 +285,27 @@ mod tests {
     #[test]
     fn test_add_and_query() {
         let mut idx = InvertedIndex::new();
-        idx.add_series(1, &[
-            ("host".to_string(), "server01".to_string()),
-            ("region".to_string(), "us-west".to_string()),
-        ]);
-        idx.add_series(2, &[
-            ("host".to_string(), "server02".to_string()),
-            ("region".to_string(), "us-west".to_string()),
-        ]);
-        idx.add_series(3, &[
-            ("host".to_string(), "server01".to_string()),
-            ("region".to_string(), "eu-central".to_string()),
-        ]);
+        idx.add_series(
+            1,
+            &[
+                ("host".to_string(), "server01".to_string()),
+                ("region".to_string(), "us-west".to_string()),
+            ],
+        );
+        idx.add_series(
+            2,
+            &[
+                ("host".to_string(), "server02".to_string()),
+                ("region".to_string(), "us-west".to_string()),
+            ],
+        );
+        idx.add_series(
+            3,
+            &[
+                ("host".to_string(), "server01".to_string()),
+                ("region".to_string(), "eu-central".to_string()),
+            ],
+        );
 
         let result = idx.query_exact("host", "server01");
         assert!(result.contains(1));
@@ -304,14 +316,20 @@ mod tests {
     #[test]
     fn test_intersection() {
         let mut idx = InvertedIndex::new();
-        idx.add_series(1, &[
-            ("host".to_string(), "server01".to_string()),
-            ("region".to_string(), "us-west".to_string()),
-        ]);
-        idx.add_series(2, &[
-            ("host".to_string(), "server01".to_string()),
-            ("region".to_string(), "eu-central".to_string()),
-        ]);
+        idx.add_series(
+            1,
+            &[
+                ("host".to_string(), "server01".to_string()),
+                ("region".to_string(), "us-west".to_string()),
+            ],
+        );
+        idx.add_series(
+            2,
+            &[
+                ("host".to_string(), "server01".to_string()),
+                ("region".to_string(), "eu-central".to_string()),
+            ],
+        );
 
         let result = idx.query_intersection(&[
             ("host".to_string(), "server01".to_string()),

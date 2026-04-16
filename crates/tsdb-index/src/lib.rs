@@ -1,6 +1,6 @@
-pub mod skiplist;
 pub mod inverted;
 pub mod manager;
+pub mod skiplist;
 pub mod wal;
 
 pub use manager::IndexManager;

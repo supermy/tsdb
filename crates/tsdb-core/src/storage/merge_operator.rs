@@ -21,7 +21,7 @@
 //!
 //! 后写入的同名字段会覆盖先写入的值（upsert 语义）。
 
-use crate::storage::merge_operand::{MergedBlock, decode_merge_operand};
+use crate::storage::merge_operand::{decode_merge_operand, MergedBlock};
 
 /// TSDB 时序块级合并函数
 ///
@@ -166,7 +166,8 @@ mod tests {
 
         // 写入 5 个不同名称的字段
         for i in 0..5 {
-            let op = encode_merge_operand(&format!("field_{}", i), 1000, &FieldValue::Float(i as f64));
+            let op =
+                encode_merge_operand(&format!("field_{}", i), 1000, &FieldValue::Float(i as f64));
             let field = decode_merge_operand(&op).unwrap();
             block.upsert_field(field);
         }
@@ -180,8 +181,16 @@ mod tests {
     fn test_merge_encode_decode_cycle() {
         // 创建包含两个字段的块
         let mut block = MergedBlock::default();
-        block.upsert_field(MergedField { name: "cpu".into(), micro_offset: 100, value: FieldValue::Float(0.5) });
-        block.upsert_field(MergedField { name: "mem".into(), micro_offset: 100, value: FieldValue::Float(0.8) });
+        block.upsert_field(MergedField {
+            name: "cpu".into(),
+            micro_offset: 100,
+            value: FieldValue::Float(0.5),
+        });
+        block.upsert_field(MergedField {
+            name: "mem".into(),
+            micro_offset: 100,
+            value: FieldValue::Float(0.8),
+        });
 
         // 编码
         let encoded = block.encode();

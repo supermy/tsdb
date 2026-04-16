@@ -16,7 +16,7 @@
 //! - 支持并行生成多个 SST 文件后批量导入
 //! - 导入期间数据库仍可正常读写
 
-use rocksdb::{SstFileWriter, Options, IngestExternalFileOptions, DB};
+use rocksdb::{IngestExternalFileOptions, Options, SstFileWriter, DB};
 
 pub struct BulkImporter<'a> {
     writer: SstFileWriter<'a>,
@@ -28,7 +28,9 @@ pub struct BulkImporter<'a> {
 impl<'a> BulkImporter<'a> {
     pub fn new(opts: &'a Options, sst_path: &str) -> Self {
         let writer = SstFileWriter::create(opts);
-        writer.open(sst_path).expect("Failed to open SST file for writing");
+        writer
+            .open(sst_path)
+            .expect("Failed to open SST file for writing");
         BulkImporter {
             writer,
             sst_path: sst_path.to_string(),
@@ -38,13 +40,17 @@ impl<'a> BulkImporter<'a> {
     }
 
     pub fn put(&mut self, key: &[u8], value: &[u8]) -> Result<(), String> {
-        self.writer.put(key, value).map_err(|e| format!("SST put failed: {}", e))?;
+        self.writer
+            .put(key, value)
+            .map_err(|e| format!("SST put failed: {}", e))?;
         self.key_count += 1;
         Ok(())
     }
 
     pub fn merge(&mut self, key: &[u8], value: &[u8]) -> Result<(), String> {
-        self.writer.merge(key, value).map_err(|e| format!("SST merge failed: {}", e))?;
+        self.writer
+            .merge(key, value)
+            .map_err(|e| format!("SST merge failed: {}", e))?;
         self.key_count += 1;
         Ok(())
     }
@@ -53,7 +59,9 @@ impl<'a> BulkImporter<'a> {
         if self.finished {
             return Ok(self.key_count);
         }
-        self.writer.finish().map_err(|e| format!("SST finish failed: {}", e))?;
+        self.writer
+            .finish()
+            .map_err(|e| format!("SST finish failed: {}", e))?;
         self.finished = true;
         Ok(self.key_count)
     }
@@ -82,7 +90,8 @@ pub fn ingest_sst_files(
     let paths: Vec<&str> = sst_paths.iter().map(|s| s.as_str()).collect();
 
     if let Some(cf) = cf_name {
-        let cf_handle = db.cf_handle(cf)
+        let cf_handle = db
+            .cf_handle(cf)
             .ok_or_else(|| format!("Column family '{}' not found", cf))?;
         db.ingest_external_file_cf_opts(&cf_handle, &opts, paths)
             .map_err(|e| format!("Ingest external file failed: {}", e))?;
@@ -183,7 +192,8 @@ mod tests {
             sst_dir.path().to_str().unwrap(),
             &records,
             50,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(count, 100);
 

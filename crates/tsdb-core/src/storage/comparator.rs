@@ -90,10 +90,7 @@ fn split_rowkey(data: &[u8]) -> RowKeyParts<'_> {
 }
 
 pub fn register_comparator(opts: &mut rocksdb::Options) {
-    opts.set_comparator(
-        "tsdb.comparator",
-        Box::new(tsdb_compare),
-    );
+    opts.set_comparator("tsdb.comparator", Box::new(tsdb_compare));
 }
 
 #[cfg(test)]

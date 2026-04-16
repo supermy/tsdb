@@ -40,25 +40,39 @@ impl DashboardRenderer {
         let json = dash.summary_json();
 
         // 从 JSON 中提取各指标数据，生成 HTML 卡片
-        let metrics_html = json["metrics"].as_array().map(|arr| {
-            arr.iter().map(|m| {
-                let name = m["name"].as_str().unwrap_or("");
-                let value = m["value"].as_f64().unwrap_or(0.0);
-                let change = m["change_pct"].as_str().unwrap_or("");
-                let trend = m["trend"].as_str().unwrap_or("");
-                // 根据趋势选择颜色和箭头符号
-                let color = match trend { "up" => "#e15759", "down" => "#59a14f", _ => "#4e79a7" };
-                let arrow = match trend { "up" => "\u{2191}", "down" => "\u{2193}", _ => "\u{2192}" };
-                format!(
-                    r#"<div class="metric-card">
+        let metrics_html = json["metrics"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|m| {
+                        let name = m["name"].as_str().unwrap_or("");
+                        let value = m["value"].as_f64().unwrap_or(0.0);
+                        let change = m["change_pct"].as_str().unwrap_or("");
+                        let trend = m["trend"].as_str().unwrap_or("");
+                        // 根据趋势选择颜色和箭头符号
+                        let color = match trend {
+                            "up" => "#e15759",
+                            "down" => "#59a14f",
+                            _ => "#4e79a7",
+                        };
+                        let arrow = match trend {
+                            "up" => "\u{2191}",
+                            "down" => "\u{2193}",
+                            _ => "\u{2192}",
+                        };
+                        format!(
+                            r#"<div class="metric-card">
                         <div class="metric-name">{}</div>
                         <div class="metric-value" style="color:{}">{:.2} {}</div>
                         <div class="metric-change">{}</div>
                     </div>"#,
-                    name, color, value, arrow, change
-                )
-            }).collect::<Vec<_>>().join("")
-        }).unwrap_or_default();
+                            name, color, value, arrow, change
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .unwrap_or_default();
 
         // 组装完整 HTML 页面（含内联 CSS 样式表）
         format!(
@@ -84,7 +98,9 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: 
 </div>
 <div class="grid">{}</div>
 </body></html>"#,
-            dash.total_points, dash.measurements.len(), metrics_html
+            dash.total_points,
+            dash.measurements.len(),
+            metrics_html
         )
     }
 
@@ -151,7 +167,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: 
     </div>
 </div>
 </body></html>"#,
-            gauges_html, json["history_records"].as_u64().unwrap_or(0)
+            gauges_html,
+            json["history_records"].as_u64().unwrap_or(0)
         )
     }
 }

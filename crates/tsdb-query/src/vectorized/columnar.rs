@@ -1,5 +1,5 @@
-use tsdb_types::model::FieldValue;
 use std::collections::HashMap;
+use tsdb_types::model::FieldValue;
 
 #[derive(Debug, Clone)]
 pub enum Column {
@@ -76,8 +76,14 @@ impl ColumnarBatch {
         }
 
         let mut columns: HashMap<String, Column> = HashMap::new();
-        columns.insert("time".to_string(), Column::Timestamp(Vec::with_capacity(data_points.len())));
-        columns.insert("measurement".to_string(), Column::String(Vec::with_capacity(data_points.len())));
+        columns.insert(
+            "time".to_string(),
+            Column::Timestamp(Vec::with_capacity(data_points.len())),
+        );
+        columns.insert(
+            "measurement".to_string(),
+            Column::String(Vec::with_capacity(data_points.len())),
+        );
 
         let first = &data_points[0];
         for (name, fv) in &first.fields {
@@ -174,12 +180,14 @@ mod tests {
         let dps = vec![
             {
                 let mut dp = DataPoint::new("cpu", 1000);
-                dp.fields.insert("usage".to_string(), FieldValue::Float(0.5));
+                dp.fields
+                    .insert("usage".to_string(), FieldValue::Float(0.5));
                 dp
             },
             {
                 let mut dp = DataPoint::new("cpu", 2000);
-                dp.fields.insert("usage".to_string(), FieldValue::Float(0.7));
+                dp.fields
+                    .insert("usage".to_string(), FieldValue::Float(0.7));
                 dp
             },
         ];
@@ -195,12 +203,14 @@ mod tests {
         let dps = vec![
             {
                 let mut dp = DataPoint::new("cpu", 1000);
-                dp.fields.insert("usage".to_string(), FieldValue::Float(0.5));
+                dp.fields
+                    .insert("usage".to_string(), FieldValue::Float(0.5));
                 dp
             },
             {
                 let mut dp = DataPoint::new("cpu", 2000);
-                dp.fields.insert("usage".to_string(), FieldValue::Float(0.9));
+                dp.fields
+                    .insert("usage".to_string(), FieldValue::Float(0.9));
                 dp
             },
         ];

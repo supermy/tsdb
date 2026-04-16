@@ -33,10 +33,10 @@
 //! ```
 //!
 
-use crate::skiplist::SkipList;
 use crate::inverted::InvertedIndex;
-use tsdb_types::model::SeriesId;
+use crate::skiplist::SkipList;
 use std::collections::HashMap;
+use tsdb_types::model::SeriesId;
 
 /// 索引管理器 — 统一管理时间索引和标签索引
 ///
@@ -70,27 +70,32 @@ impl IndexManager {
         timestamp: i64,
         block_offset: u64,
     ) -> SeriesId {
-        let series_key = format!("{},{}", measurement,
-            tags.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(","));
+        let series_key = format!(
+            "{},{}",
+            measurement,
+            tags.iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
 
-        let series_id = *self.series_cache
+        let series_id = *self
+            .series_cache
             .entry(series_key.clone())
             .or_insert_with(|| {
                 let id = self.next_series_id;
                 self.next_series_id += 1;
 
-                let tag_index = self.tag_index
-                    .entry(measurement.to_string())
-                    .or_default();
-                let tag_pairs: Vec<(String, String)> = tags.iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
+                let tag_index = self.tag_index.entry(measurement.to_string()).or_default();
+                let tag_pairs: Vec<(String, String)> =
+                    tags.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 tag_index.add_series(id, &tag_pairs);
 
                 id
             });
 
-        let time_index = self.time_index
+        let time_index = self
+            .time_index
             .entry(measurement.to_string())
             .or_insert_with(|| SkipList::new(16));
         time_index.insert(timestamp, block_offset);
@@ -158,7 +163,8 @@ impl IndexManager {
 
     /// 获取指定 measurement 下已索引的序列数量
     pub fn series_count(&self, measurement: &str) -> usize {
-        self.tag_index.get(measurement)
+        self.tag_index
+            .get(measurement)
             .map(|idx| idx.series_count())
             .unwrap_or(0)
     }
@@ -184,7 +190,10 @@ impl IndexManager {
             let key = format!("index:tag:{}", measurement);
             result.insert(key, idx.serialize());
         }
-        result.insert("index:meta:next_series_id".to_string(), self.next_series_id.to_le_bytes().to_vec());
+        result.insert(
+            "index:meta:next_series_id".to_string(),
+            self.next_series_id.to_le_bytes().to_vec(),
+        );
         result
     }
 
@@ -266,14 +275,10 @@ mod tests {
         mgr.index_data_point("cpu", &tags1, 1_000_000_000, 0);
         mgr.index_data_point("cpu", &tags2, 1_000_000_000, 1);
 
-        let result = mgr.query_by_tags("cpu", &[
-            ("region".to_string(), "us-west".to_string()),
-        ]);
+        let result = mgr.query_by_tags("cpu", &[("region".to_string(), "us-west".to_string())]);
         assert_eq!(result.len(), 2);
 
-        let result = mgr.query_by_tags("cpu", &[
-            ("host".to_string(), "server01".to_string()),
-        ]);
+        let result = mgr.query_by_tags("cpu", &[("host".to_string(), "server01".to_string())]);
         assert_eq!(result.len(), 1);
     }
 }

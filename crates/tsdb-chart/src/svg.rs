@@ -14,7 +14,7 @@
 //! - 标题（顶部居中）
 //!
 
-use crate::chart::{TimeSeriesChart, ChartType};
+use crate::chart::{ChartType, TimeSeriesChart};
 
 /// SVG 渲染器 — 将 TimeSeriesChart 转换为 SVG 字符串
 ///
@@ -102,7 +102,9 @@ impl SvgRenderer {
                 if ts_range > 0.0 {
                     let ts = min_ts + ts_range * i as f64 / 5.0;
                     let dt = chrono::DateTime::from_timestamp(ts as i64 / 1_000_000, 0);
-                    let label = dt.map(|d| d.format("%H:%M").to_string()).unwrap_or_default();
+                    let label = dt
+                        .map(|d| d.format("%H:%M").to_string())
+                        .unwrap_or_default();
                     svg.push_str(&format!(
                         "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"10\" fill=\"#666\">{}</text>",
                         x, m.top + plot_h + 15, label
@@ -114,30 +116,49 @@ impl SvgRenderer {
         // === 坐标轴线 ===
         svg.push_str(&format!(
             "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"#333\" stroke-width=\"1\"/>",
-            m.left, m.top, m.left, m.top + plot_h
+            m.left,
+            m.top,
+            m.left,
+            m.top + plot_h
         )); // Y 轴
         svg.push_str(&format!(
             "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"#333\" stroke-width=\"1\"/>",
-            m.left, m.top + plot_h, m.left + plot_w, m.top + plot_h
+            m.left,
+            m.top + plot_h,
+            m.left + plot_w,
+            m.top + plot_h
         )); // X 轴
 
         // === 数据序列渲染 ===
         for (idx, series) in chart.series.iter().enumerate() {
-            if series.is_empty() { continue; }
+            if series.is_empty() {
+                continue;
+            }
             let default_color = "#4e79a7".to_string();
-            let color = config.colors.get(idx % config.colors.len()).unwrap_or(&default_color);
+            let color = config
+                .colors
+                .get(idx % config.colors.len())
+                .unwrap_or(&default_color);
 
             // 将数据点从数据坐标映射到屏幕像素坐标
-            let points: Vec<(f64, f64)> = series.timestamps.iter().zip(series.values.iter())
+            let points: Vec<(f64, f64)> = series
+                .timestamps
+                .iter()
+                .zip(series.values.iter())
                 .map(|(&ts, &v)| {
                     let x = if ts_range > 0.0 {
                         m.left as f64 + ((ts as f64 - min_ts) / ts_range) * plot_w as f64
-                    } else { m.left as f64 + plot_w as f64 / 2.0 };
+                    } else {
+                        m.left as f64 + plot_w as f64 / 2.0
+                    };
                     let y = if val_range > 0.0 {
                         m.top as f64 + (1.0 - (v - min_val) / val_range) * plot_h as f64
-                    } else { m.top as f64 + plot_h as f64 / 2.0 };
+                    } else {
+                        m.top as f64 + plot_h as f64 / 2.0
+                    };
                     (x, y)
-                }).collect();
+                })
+                .collect();
 
             // 根据图表类型选择不同的 SVG 元素
             match config.chart_type {
@@ -145,10 +166,16 @@ impl SvgRenderer {
                     if !points.is_empty() {
                         // 面积图：路径 + 闭合到底边形成填充区域
                         let mut d = format!("M {} {}", points[0].0, points[0].1);
-                        for p in &points[1..] { d.push_str(&format!(" L {} {}", p.0, p.1)); }
-                        d.push_str(&format!(" L {} {} L {} {} Z",
-                            points.last().unwrap().0, m.top + plot_h,
-                            points[0].0, m.top + plot_h));
+                        for p in &points[1..] {
+                            d.push_str(&format!(" L {} {}", p.0, p.1));
+                        }
+                        d.push_str(&format!(
+                            " L {} {} L {} {} Z",
+                            points.last().unwrap().0,
+                            m.top + plot_h,
+                            points[0].0,
+                            m.top + plot_h
+                        ));
                         svg.push_str(&format!(
                             "<path d=\"{}\" fill=\"{}\" fill-opacity=\"0.3\" stroke=\"{}\" stroke-width=\"1.5\"/>",
                             d, color, color
@@ -170,9 +197,12 @@ impl SvgRenderer {
                     // 默认折线图
                     if !points.is_empty() {
                         let mut d = format!("M {} {}", points[0].0, points[0].1);
-                        for p in &points[1..] { d.push_str(&format!(" L {} {}", p.0, p.1)); }
+                        for p in &points[1..] {
+                            d.push_str(&format!(" L {} {}", p.0, p.1));
+                        }
                         svg.push_str(&format!(
-                            "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.5\"/>", d, color
+                            "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.5\"/>",
+                            d, color
                         ));
                     }
                 }
@@ -182,7 +212,8 @@ impl SvgRenderer {
             if config.show_points && !points.is_empty() {
                 for p in &points {
                     svg.push_str(&format!(
-                        "<circle cx=\"{}\" cy=\"{}\" r=\"3\" fill=\"{}\"/>", p.0, p.1, color
+                        "<circle cx=\"{}\" cy=\"{}\" r=\"3\" fill=\"{}\"/>",
+                        p.0, p.1, color
                     ));
                 }
             }
@@ -198,7 +229,10 @@ impl SvgRenderer {
             ));
             for (idx, series) in chart.series.iter().enumerate() {
                 let default_color2 = "#4e79a7".to_string();
-                let color = config.colors.get(idx % config.colors.len()).unwrap_or(&default_color2);
+                let color = config
+                    .colors
+                    .get(idx % config.colors.len())
+                    .unwrap_or(&default_color2);
                 let y = legend_y + 15 + idx as u32 * 20;
                 svg.push_str(&format!(
                     "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"2\"/>",
@@ -224,7 +258,11 @@ mod tests {
 
     #[test]
     fn test_svg_line_chart() {
-        let mut chart = TimeSeriesChart::new(ChartConfig { title: "CPU Usage".to_string(), chart_type: ChartType::Line, ..Default::default() });
+        let mut chart = TimeSeriesChart::new(ChartConfig {
+            title: "CPU Usage".to_string(),
+            chart_type: ChartType::Line,
+            ..Default::default()
+        });
         let mut series = TimeSeries::new("cpu");
         series.add_point(1_000_000_000, 0.5);
         series.add_point(1_030_000_000, 0.7);
@@ -239,7 +277,11 @@ mod tests {
 
     #[test]
     fn test_svg_area_chart() {
-        let mut chart = TimeSeriesChart::new(ChartConfig { title: "Memory".to_string(), chart_type: ChartType::Area, ..Default::default() });
+        let mut chart = TimeSeriesChart::new(ChartConfig {
+            title: "Memory".to_string(),
+            chart_type: ChartType::Area,
+            ..Default::default()
+        });
         let mut series = TimeSeries::new("mem");
         series.add_point(1_000_000_000, 40.0);
         series.add_point(1_030_000_000, 60.0);
@@ -251,7 +293,11 @@ mod tests {
 
     #[test]
     fn test_svg_bar_chart() {
-        let mut chart = TimeSeriesChart::new(ChartConfig { title: "Requests".to_string(), chart_type: ChartType::Bar, ..Default::default() });
+        let mut chart = TimeSeriesChart::new(ChartConfig {
+            title: "Requests".to_string(),
+            chart_type: ChartType::Bar,
+            ..Default::default()
+        });
         let mut series = TimeSeries::new("req");
         series.add_point(1_000_000_000, 100.0);
         series.add_point(1_030_000_000, 200.0);

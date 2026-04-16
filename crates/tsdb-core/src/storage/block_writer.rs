@@ -33,14 +33,14 @@
 //!
 
 use crate::error::{Result, TsdbError};
-use crate::rowkey::{RowKey, timestamp_to_cf_name, SEPARATOR};
+use crate::rowkey::{timestamp_to_cf_name, RowKey, SEPARATOR};
 use crate::storage::cf_manager::CfManager;
 use crate::storage::merge_operand::{MergedBlock, MergedField};
-use tsdb_types::model::DataPoint;
+use chrono::NaiveDate;
 use rocksdb::MultiThreaded;
 use std::collections::HashMap;
 use std::sync::Arc;
-use chrono::NaiveDate;
+use tsdb_types::model::DataPoint;
 
 /// RocksDB 多线程实例的类型别名
 type TsdbDB = rocksdb::DBWithThreadMode<MultiThreaded>;
@@ -116,7 +116,12 @@ impl BlockWriter {
     /// - `cf_manager`: 列族管理器（用于按需创建目标日期的 CF）
     /// - `config`: 写入器配置（最大行数、刷新间隔等）
     pub fn new(db: Arc<TsdbDB>, cf_manager: CfManager, config: BlockWriterConfig) -> Self {
-        Self { db, cf_manager, config, buffers: HashMap::new() }
+        Self {
+            db,
+            cf_manager,
+            config,
+            buffers: HashMap::new(),
+        }
     }
 
     /// 写入单个数据点到缓冲区
@@ -213,7 +218,8 @@ impl BlockWriter {
 
         let value = block.encode();
 
-        self.db.put_cf(&cf, &key, &value)
+        self.db
+            .put_cf(&cf, &key, &value)
             .map_err(|e| TsdbError::Storage(format!("flush block failed: {}", e)))?;
 
         Ok(())

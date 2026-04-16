@@ -272,6 +272,9 @@ mod tests {
         let mut tags2 = tsdb_types::model::Tags::new();
         tags2.insert("host".to_string(), "server01".to_string());
 
-        assert_eq!(dim.compute_tag_signature(&tags1), dim.compute_tag_signature(&tags2));
+        assert_eq!(
+            dim.compute_tag_signature(&tags1),
+            dim.compute_tag_signature(&tags2)
+        );
     }
 }

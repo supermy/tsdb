@@ -80,12 +80,22 @@ impl Default for ChartConfig {
             show_legend: true,
             show_grid: true,
             show_points: false,
-            margin: Margin { top: 30, right: 30, bottom: 50, left: 60 },
+            margin: Margin {
+                top: 30,
+                right: 30,
+                bottom: 50,
+                left: 60,
+            },
             // Tableau 10 配色方案（专业、易区分）
             colors: vec![
-                "#4e79a7".to_string(), "#f28e2b".to_string(), "#e15759".to_string(),
-                "#76b7b2".to_string(), "#59a14f".to_string(), "#edc948".to_string(),
-                "#b07aa1".to_string(), "#ff9da7".to_string(),
+                "#4e79a7".to_string(),
+                "#f28e2b".to_string(),
+                "#e15759".to_string(),
+                "#76b7b2".to_string(),
+                "#59a14f".to_string(),
+                "#edc948".to_string(),
+                "#b07aa1".to_string(),
+                "#ff9da7".to_string(),
             ],
         }
     }
@@ -109,7 +119,10 @@ impl TimeSeriesChart {
     /// # 参数
     /// - `config`: 图表配置（可使用 `ChartConfig::default()` 快速创建）
     pub fn new(config: ChartConfig) -> Self {
-        Self { config, series: Vec::new() }
+        Self {
+            config,
+            series: Vec::new(),
+        }
     }
 
     /// 向图表中添加一个时间序列
@@ -134,7 +147,9 @@ impl TimeSeriesChart {
         let mut max_val = f64::NEG_INFINITY;
 
         for s in &self.series {
-            if s.is_empty() { continue; }
+            if s.is_empty() {
+                continue;
+            }
             let ts_min = *s.timestamps.first().unwrap_or(&0) as f64;
             let ts_max = *s.timestamps.last().unwrap_or(&0) as f64;
             min_ts = min_ts.min(ts_min);
@@ -144,10 +159,18 @@ impl TimeSeriesChart {
         }
 
         // 空数据的兜底值
-        if min_ts == f64::INFINITY { min_ts = 0.0; }
-        if max_ts == f64::NEG_INFINITY { max_val = 1.0; }
-        if min_val == f64::INFINITY { min_val = 0.0; }
-        if max_val == f64::NEG_INFINITY { max_val = 1.0; }
+        if min_ts == f64::INFINITY {
+            min_ts = 0.0;
+        }
+        if max_ts == f64::NEG_INFINITY {
+            max_val = 1.0;
+        }
+        if min_val == f64::INFINITY {
+            min_val = 0.0;
+        }
+        if max_val == f64::NEG_INFINITY {
+            max_val = 1.0;
+        }
 
         // 值域添加 5% padding
         let val_range = max_val - min_val;
@@ -163,12 +186,19 @@ impl TimeSeriesChart {
     /// 用于 API 响应或前端 JavaScript 库（如 ECharts、Chart.js）消费。
     /// 输出格式：`{ config: {...}, series: [{ name, points }, ...] }`
     pub fn to_json(&self) -> String {
-        let data: Vec<serde_json::Value> = self.series.iter().map(|s| {
-            let points: Vec<Vec<f64>> = s.timestamps.iter().zip(s.values.iter())
-                .map(|(&ts, &v)| vec![ts as f64, v])
-                .collect();
-            serde_json::json!({ "name": s.name, "points": points })
-        }).collect();
+        let data: Vec<serde_json::Value> = self
+            .series
+            .iter()
+            .map(|s| {
+                let points: Vec<Vec<f64>> = s
+                    .timestamps
+                    .iter()
+                    .zip(s.values.iter())
+                    .map(|(&ts, &v)| vec![ts as f64, v])
+                    .collect();
+                serde_json::json!({ "name": s.name, "points": points })
+            })
+            .collect();
 
         serde_json::json!({ "config": self.config, "series": data }).to_string()
     }

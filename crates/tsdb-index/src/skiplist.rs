@@ -26,8 +26,6 @@
 //!
 //! 同一时间戳可能对应多个数据块（不同字段），因此使用 Vec<u64> 存储。
 
-
-
 /// 时间戳类型（微秒精度）
 type Timestamp = i64;
 
@@ -118,7 +116,7 @@ impl SkipList {
             head: 0,
             max_level,
             len: 0,
-            rng_state: 42,  // 固定种子，保证可重复性
+            rng_state: 42, // 固定种子，保证可重复性
         }
     }
 
@@ -296,7 +294,9 @@ impl SkipList {
     ///
     /// 解析成功返回 `Some(SkipList)`，失败返回 `None`
     pub fn deserialize(data: &[u8]) -> Option<Self> {
-        if data.len() < 4 { return None; }
+        if data.len() < 4 {
+            return None;
+        }
 
         // 读取节点数量
         let node_count = u32::from_le_bytes(data[0..4].try_into().ok()?) as usize;
@@ -307,7 +307,9 @@ impl SkipList {
 
         // 逐个恢复节点
         for _ in 0..node_count {
-            if offset + 12 > data.len() { return None; }
+            if offset + 12 > data.len() {
+                return None;
+            }
 
             // 读取键
             let key = i64::from_le_bytes(data[offset..offset + 8].try_into().ok()?);
@@ -319,7 +321,9 @@ impl SkipList {
 
             // 读取每个偏移量
             for j in 0..off_count {
-                if offset + 8 > data.len() { return None; }
+                if offset + 8 > data.len() {
+                    return None;
+                }
                 let block_offset = u64::from_le_bytes(data[offset..offset + 8].try_into().ok()?);
                 offset += 8;
 
@@ -328,7 +332,8 @@ impl SkipList {
                     sl.insert(key, block_offset);
                 } else {
                     // 后续偏移量直接追加到已有节点
-                    if let Some(node) = sl.nodes.iter_mut().find(|n| n.key == key && !n.is_sentinel) {
+                    if let Some(node) = sl.nodes.iter_mut().find(|n| n.key == key && !n.is_sentinel)
+                    {
                         node.block_offsets.push(block_offset);
                     }
                 }
@@ -350,7 +355,10 @@ impl SkipList {
         let mut level = 1;
 
         // LCG 随机数生成
-        self.rng_state = self.rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        self.rng_state = self
+            .rng_state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1);
 
         // 以 25% 概率提升层数
         while level < self.max_level && (self.rng_state >> 33).is_multiple_of(4) {

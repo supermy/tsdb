@@ -24,10 +24,10 @@ use tsdb_types::model::FieldValue;
 
 /// 字段类型标识符 - Field Type Identifiers
 /// 用于二进制编码时标识字段的数据类型
-const FIELD_TYPE_FLOAT: u8 = 0x00;    // 浮点数类型
-const FIELD_TYPE_INTEGER: u8 = 0x01;  // 整数类型
-const FIELD_TYPE_STRING: u8 = 0x02;   // 字符串类型
-const FIELD_TYPE_BOOLEAN: u8 = 0x03;  // 布尔类型
+const FIELD_TYPE_FLOAT: u8 = 0x00; // 浮点数类型
+const FIELD_TYPE_INTEGER: u8 = 0x01; // 整数类型
+const FIELD_TYPE_STRING: u8 = 0x02; // 字符串类型
+const FIELD_TYPE_BOOLEAN: u8 = 0x03; // 布尔类型
 
 /// MergedBlock 魔数 - Magic Number for MergedBlock
 /// 用于在读取时快速识别数据格式是否为合并格式
@@ -138,18 +138,22 @@ impl MergedBlock {
     /// - 字段解码失败
     pub fn decode(data: &[u8]) -> Option<Self> {
         // 最小长度检查：魔数(2B) + 字段数(2B) = 4 字节
-        if data.len() < 4 { return None; }
+        if data.len() < 4 {
+            return None;
+        }
 
         // 验证魔数
         let magic = u16::from_le_bytes([data[0], data[1]]);
-        if magic != MERGE_MAGIC { return None; }
+        if magic != MERGE_MAGIC {
+            return None;
+        }
 
         // 读取字段数量
         let field_count = u16::from_le_bytes([data[2], data[3]]) as usize;
 
         // 预分配字段向量
         let mut fields = Vec::with_capacity(field_count);
-        let mut offset = 4;  // 跳过头部
+        let mut offset = 4; // 跳过头部
 
         // 逐个解码字段
         for _ in 0..field_count {
@@ -218,8 +222,10 @@ impl MergedBlock {
         tags: tsdb_types::model::Tags,
     ) -> Vec<tsdb_types::model::DataPoint> {
         // 使用 BTreeMap 按 offset 排序
-        let mut offset_map: std::collections::BTreeMap<u32, std::collections::HashMap<String, FieldValue>> =
-            std::collections::BTreeMap::new();
+        let mut offset_map: std::collections::BTreeMap<
+            u32,
+            std::collections::HashMap<String, FieldValue>,
+        > = std::collections::BTreeMap::new();
 
         // 按 offset 分组字段
         for f in &self.fields {
@@ -233,7 +239,7 @@ impl MergedBlock {
         offset_map
             .into_iter()
             .map(|(offset, fields)| {
-                let ts = block_start + offset as i64;  // 计算绝对时间戳
+                let ts = block_start + offset as i64; // 计算绝对时间戳
                 let mut dp = tsdb_types::model::DataPoint::new(measurement, ts);
                 dp.tags = tags.clone();
                 dp.fields = fields.into_iter().collect();
@@ -279,7 +285,11 @@ impl MergedBlock {
             }
         }
 
-        if found { Some(dp) } else { None }
+        if found {
+            Some(dp)
+        } else {
+            None
+        }
     }
 }
 
@@ -347,7 +357,7 @@ fn encode_field_to_buf(buf: &mut Vec<u8>, name: &str, micro_offset: u32, value: 
             buf.push(name.len() as u8);
             buf.extend_from_slice(name.as_bytes());
             buf.extend_from_slice(&micro_offset.to_le_bytes());
-            buf.extend_from_slice(&f.to_be_bytes());  // 大端序保持精度
+            buf.extend_from_slice(&f.to_be_bytes()); // 大端序保持精度
         }
         // 整数编码：类型(1) + 名称长度(1) + 名称 + 偏移量(4) + i64(8)
         FieldValue::Integer(i) => {
@@ -391,7 +401,9 @@ fn encode_field_to_buf(buf: &mut Vec<u8>, name: &str, micro_offset: u32, value: 
 /// 解析成功返回 `Some((MergedField, end_position))`，失败返回 `None`
 fn decode_field(data: &[u8], start: usize) -> Option<(MergedField, usize)> {
     // 边界检查
-    if start >= data.len() { return None; }
+    if start >= data.len() {
+        return None;
+    }
 
     // 读取字段类型
     let field_type = data[start];
@@ -402,14 +414,19 @@ fn decode_field(data: &[u8], start: usize) -> Option<(MergedField, usize)> {
     let name_end = name_start + name_len;
 
     // 边界检查
-    if name_end + 4 > data.len() { return None; }
+    if name_end + 4 > data.len() {
+        return None;
+    }
 
     // 读取字段名称
     let name = String::from_utf8_lossy(&data[name_start..name_end]).to_string();
 
     // 读取微秒偏移量（小端序）
     let micro_offset = u32::from_le_bytes([
-        data[name_end], data[name_end + 1], data[name_end + 2], data[name_end + 3],
+        data[name_end],
+        data[name_end + 1],
+        data[name_end + 2],
+        data[name_end + 3],
     ]);
 
     let payload_start = name_end + 4;
@@ -418,28 +435,39 @@ fn decode_field(data: &[u8], start: usize) -> Option<(MergedField, usize)> {
     let (value, end) = match field_type {
         // 浮点数：8 字节大端序
         FIELD_TYPE_FLOAT => {
-            if payload_start + 8 > data.len() { return None; }
+            if payload_start + 8 > data.len() {
+                return None;
+            }
             let f = f64::from_be_bytes(data[payload_start..payload_start + 8].try_into().ok()?);
             (FieldValue::Float(f), payload_start + 8)
         }
         // 整数：8 字节大端序
         FIELD_TYPE_INTEGER => {
-            if payload_start + 8 > data.len() { return None; }
+            if payload_start + 8 > data.len() {
+                return None;
+            }
             let i = i64::from_be_bytes(data[payload_start..payload_start + 8].try_into().ok()?);
             (FieldValue::Integer(i), payload_start + 8)
         }
         // 字符串：4 字节长度 + 内容
         FIELD_TYPE_STRING => {
-            if payload_start + 4 > data.len() { return None; }
-            let s_len = u32::from_le_bytes(data[payload_start..payload_start + 4].try_into().ok()?) as usize;
+            if payload_start + 4 > data.len() {
+                return None;
+            }
+            let s_len = u32::from_le_bytes(data[payload_start..payload_start + 4].try_into().ok()?)
+                as usize;
             let s_start = payload_start + 4;
-            if s_start + s_len > data.len() { return None; }
+            if s_start + s_len > data.len() {
+                return None;
+            }
             let s = String::from_utf8_lossy(&data[s_start..s_start + s_len]).to_string();
             (FieldValue::String(s), s_start + s_len)
         }
         // 布尔：1 字节
         FIELD_TYPE_BOOLEAN => {
-            if payload_start >= data.len() { return None; }
+            if payload_start >= data.len() {
+                return None;
+            }
             let b = data[payload_start] != 0;
             (FieldValue::Boolean(b), payload_start + 1)
         }
@@ -447,7 +475,14 @@ fn decode_field(data: &[u8], start: usize) -> Option<(MergedField, usize)> {
         _ => return None,
     };
 
-    Some((MergedField { name, micro_offset, value }, end))
+    Some((
+        MergedField {
+            name,
+            micro_offset,
+            value,
+        },
+        end,
+    ))
 }
 
 /// 检测值格式
@@ -509,9 +544,21 @@ mod tests {
     fn test_merged_block_roundtrip() {
         let block = MergedBlock {
             fields: vec![
-                MergedField { name: "cpu".into(), micro_offset: 15000, value: FieldValue::Float(0.5) },
-                MergedField { name: "mem".into(), micro_offset: 15000, value: FieldValue::Float(0.8) },
-                MergedField { name: "count".into(), micro_offset: 15000, value: FieldValue::Integer(100) },
+                MergedField {
+                    name: "cpu".into(),
+                    micro_offset: 15000,
+                    value: FieldValue::Float(0.5),
+                },
+                MergedField {
+                    name: "mem".into(),
+                    micro_offset: 15000,
+                    value: FieldValue::Float(0.8),
+                },
+                MergedField {
+                    name: "count".into(),
+                    micro_offset: 15000,
+                    value: FieldValue::Integer(100),
+                },
             ],
         };
         let encoded = block.encode();
@@ -526,8 +573,16 @@ mod tests {
     #[test]
     fn test_upsert_field_overwrite() {
         let mut block = MergedBlock::default();
-        block.upsert_field(MergedField { name: "cpu".into(), micro_offset: 100, value: FieldValue::Float(0.5) });
-        block.upsert_field(MergedField { name: "cpu".into(), micro_offset: 100, value: FieldValue::Float(0.9) });
+        block.upsert_field(MergedField {
+            name: "cpu".into(),
+            micro_offset: 100,
+            value: FieldValue::Float(0.5),
+        });
+        block.upsert_field(MergedField {
+            name: "cpu".into(),
+            micro_offset: 100,
+            value: FieldValue::Float(0.9),
+        });
         assert_eq!(block.fields.len(), 1);
         assert_eq!(block.fields[0].value, FieldValue::Float(0.9));
     }
@@ -537,9 +592,21 @@ mod tests {
     fn test_to_data_points() {
         let block = MergedBlock {
             fields: vec![
-                MergedField { name: "cpu".into(), micro_offset: 10000, value: FieldValue::Float(0.5) },
-                MergedField { name: "mem".into(), micro_offset: 10000, value: FieldValue::Float(0.8) },
-                MergedField { name: "cpu".into(), micro_offset: 20000, value: FieldValue::Float(0.6) },
+                MergedField {
+                    name: "cpu".into(),
+                    micro_offset: 10000,
+                    value: FieldValue::Float(0.5),
+                },
+                MergedField {
+                    name: "mem".into(),
+                    micro_offset: 10000,
+                    value: FieldValue::Float(0.8),
+                },
+                MergedField {
+                    name: "cpu".into(),
+                    micro_offset: 20000,
+                    value: FieldValue::Float(0.6),
+                },
             ],
         };
         let mut tags = std::collections::BTreeMap::new();

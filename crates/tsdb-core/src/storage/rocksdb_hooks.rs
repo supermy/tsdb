@@ -114,7 +114,8 @@ pub struct HookManager {
 impl HookManager {
     pub fn new() -> Self {
         let metrics = StorageMetrics::new();
-        let hooks: Vec<Box<dyn StorageHook>> = vec![Box::new(MetricsCollectingHook::new(metrics.clone()))];
+        let hooks: Vec<Box<dyn StorageHook>> =
+            vec![Box::new(MetricsCollectingHook::new(metrics.clone()))];
         Self { hooks, metrics }
     }
 

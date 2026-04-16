@@ -34,11 +34,7 @@ impl AggregationKey {
     }
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(
-            1 + self.business.len()
-            + 1 + self.dimension.len()
-            + 8,
-        );
+        let mut buf = Vec::with_capacity(1 + self.business.len() + 1 + self.dimension.len() + 8);
 
         buf.push(self.business.len() as u8);
         buf.extend_from_slice(self.business.as_bytes());
@@ -75,7 +71,9 @@ impl AggregationKey {
         if data.len() < dim_start + 1 + dimension_len + 1 {
             return None;
         }
-        let dimension = String::from_utf8_lossy(&data[dim_start + 1..dim_start + 1 + dimension_len]).to_string();
+        let dimension =
+            String::from_utf8_lossy(&data[dim_start + 1..dim_start + 1 + dimension_len])
+                .to_string();
 
         let sep2_pos = dim_start + 1 + dimension_len;
         if data[sep2_pos] != SEPARATOR {
@@ -86,9 +84,7 @@ impl AggregationKey {
         if data.len() < ts_start + 8 {
             return None;
         }
-        let timestamp = i64::from_be_bytes(
-            data[ts_start..ts_start + 8].try_into().ok()?
-        );
+        let timestamp = i64::from_be_bytes(data[ts_start..ts_start + 8].try_into().ok()?);
 
         Some(AggregationKey {
             business,

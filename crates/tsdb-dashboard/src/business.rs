@@ -67,7 +67,11 @@ impl Default for BusinessDashboard {
 
 impl BusinessDashboard {
     pub fn new() -> Self {
-        Self { metrics: Vec::new(), total_points: 0, measurements: Vec::new() }
+        Self {
+            metrics: Vec::new(),
+            total_points: 0,
+            measurements: Vec::new(),
+        }
     }
 
     /// 从原始 DataPoint 列表构建业务仪表盘
@@ -84,7 +88,8 @@ impl BusinessDashboard {
     /// 构建完成的 BusinessDashboard 实例
     pub fn from_data_points(data_points: &[tsdb_types::model::DataPoint]) -> BusinessDashboard {
         let mut metrics = Vec::new();
-        let mut field_values: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+        let mut field_values: std::collections::HashMap<String, Vec<f64>> =
+            std::collections::HashMap::new();
 
         for dp in data_points {
             for (field_name, field_value) in &dp.fields {
@@ -99,17 +104,34 @@ impl BusinessDashboard {
                 let current = *values.last().unwrap_or(&0.0);
                 let prev = *values.get(values.len().saturating_sub(2)).unwrap_or(&0.0);
                 // 计算环比变化率
-                let change = if prev > 0.0 { (current - prev) / prev } else { 0.0 };
-                let trend = if change > 0.05 { Trend::Up } else if change < -0.05 { Trend::Down } else { Trend::Stable };
+                let change = if prev > 0.0 {
+                    (current - prev) / prev
+                } else {
+                    0.0
+                };
+                let trend = if change > 0.05 {
+                    Trend::Up
+                } else if change < -0.05 {
+                    Trend::Down
+                } else {
+                    Trend::Stable
+                };
 
                 metrics.push(BusinessMetric {
-                    name: field_name.clone(), current, previous: prev,
-                    unit: "value".to_string(), trend,
+                    name: field_name.clone(),
+                    current,
+                    previous: prev,
+                    unit: "value".to_string(),
+                    trend,
                 });
             }
         }
 
-        BusinessDashboard { metrics, total_points: data_points.len(), measurements: Self::extract_measurements(data_points) }
+        BusinessDashboard {
+            metrics,
+            total_points: data_points.len(),
+            measurements: Self::extract_measurements(data_points),
+        }
     }
 
     /// 从 SQL 查询结果集构建业务仪表盘
@@ -118,7 +140,8 @@ impl BusinessDashboard {
     /// `(columns: &[String], rows: &[Vec<FieldValue>])`
     pub fn from_query_result(columns: &[String], rows: &[Vec<FieldValue>]) -> BusinessDashboard {
         let mut metrics = Vec::new();
-        let mut col_values: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+        let mut col_values: std::collections::HashMap<String, Vec<f64>> =
+            std::collections::HashMap::new();
 
         for row in rows {
             for (i, val) in row.iter().enumerate() {
@@ -134,22 +157,43 @@ impl BusinessDashboard {
             if values.len() >= 2 {
                 let current = *values.last().unwrap_or(&0.0);
                 let prev = *values.get(values.len().saturating_sub(2)).unwrap_or(&0.0);
-                let change = if prev > 0.0 { (current - prev) / prev } else { 0.0 };
-                let trend = if change > 0.05 { Trend::Up } else if change < -0.05 { Trend::Down } else { Trend::Stable };
+                let change = if prev > 0.0 {
+                    (current - prev) / prev
+                } else {
+                    0.0
+                };
+                let trend = if change > 0.05 {
+                    Trend::Up
+                } else if change < -0.05 {
+                    Trend::Down
+                } else {
+                    Trend::Stable
+                };
 
                 metrics.push(BusinessMetric {
-                    name: col_name.clone(), current, previous: prev,
-                    unit: "value".to_string(), trend,
+                    name: col_name.clone(),
+                    current,
+                    previous: prev,
+                    unit: "value".to_string(),
+                    trend,
                 });
             }
         }
 
-        BusinessDashboard { metrics, total_points: rows.len(), measurements: columns.to_vec() }
+        BusinessDashboard {
+            metrics,
+            total_points: rows.len(),
+            measurements: columns.to_vec(),
+        }
     }
 
     /// 从 DataPoint 列表中提取去重的 measurement 名称集合
     fn extract_measurements(dps: &[tsdb_types::model::DataPoint]) -> Vec<String> {
-        dps.iter().map(|dp| dp.measurement.clone()).collect::<std::collections::HashSet<_>>().into_iter().collect()
+        dps.iter()
+            .map(|dp| dp.measurement.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect()
     }
 
     /// 将仪表盘数据导出为 JSON 格式（用于 API 响应或前端消费）
@@ -158,7 +202,11 @@ impl BusinessDashboard {
     pub fn summary_json(&self) -> serde_json::Value {
         let mut cards = Vec::new();
         for m in &self.metrics {
-            let change_pct = if m.previous > 0.0 { (m.current - m.previous) / m.previous * 100.0 } else { 0.0 };
+            let change_pct = if m.previous > 0.0 {
+                (m.current - m.previous) / m.previous * 100.0
+            } else {
+                0.0
+            };
             cards.push(serde_json::json!({
                 "name": m.name, "value": m.current, "previous": m.previous,
                 "change_pct": format!("{:.1}%", change_pct),
@@ -173,7 +221,8 @@ impl BusinessDashboard {
         tsdb_chart::ChartConfig {
             title: "Business Metrics".to_string(),
             chart_type: tsdb_chart::ChartType::Bar,
-            show_legend: true, show_grid: true,
+            show_legend: true,
+            show_grid: true,
             ..Default::default()
         }
     }
@@ -196,7 +245,10 @@ mod tests {
 
         let dash = BusinessDashboard::from_data_points(&dps);
         assert_eq!(dash.total_points, 5);
-        assert!(!dash.summary_json()["metrics"].as_array().unwrap().is_empty());
+        assert!(!dash.summary_json()["metrics"]
+            .as_array()
+            .unwrap()
+            .is_empty());
 
         let json = dash.summary_json();
         assert_eq!(json["type"], "business_dashboard");

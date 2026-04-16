@@ -29,25 +29,34 @@ impl TsdbProperties {
     }
 
     pub fn increment(&mut self, key: &str, delta: u64) {
-        let current: u64 = self.properties.get(key)
+        let current: u64 = self
+            .properties
+            .get(key)
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
-        self.properties.insert(key.to_string(), (current + delta).to_string());
+        self.properties
+            .insert(key.to_string(), (current + delta).to_string());
     }
 
     pub fn update_time_range(&mut self, timestamp: i64) {
-        let current_start: i64 = self.properties.get("tsdb.time_range_start")
+        let current_start: i64 = self
+            .properties
+            .get("tsdb.time_range_start")
             .and_then(|v| v.parse().ok())
             .unwrap_or(i64::MAX);
-        let current_end: i64 = self.properties.get("tsdb.time_range_end")
+        let current_end: i64 = self
+            .properties
+            .get("tsdb.time_range_end")
             .and_then(|v| v.parse().ok())
             .unwrap_or(i64::MIN);
 
         if timestamp < current_start {
-            self.properties.insert("tsdb.time_range_start".to_string(), timestamp.to_string());
+            self.properties
+                .insert("tsdb.time_range_start".to_string(), timestamp.to_string());
         }
         if timestamp > current_end {
-            self.properties.insert("tsdb.time_range_end".to_string(), timestamp.to_string());
+            self.properties
+                .insert("tsdb.time_range_end".to_string(), timestamp.to_string());
         }
     }
 
@@ -56,7 +65,8 @@ impl TsdbProperties {
     }
 
     pub fn to_int_property(&self, key: &str) -> u64 {
-        self.properties.get(key)
+        self.properties
+            .get(key)
             .and_then(|v| v.parse().ok())
             .unwrap_or(0)
     }

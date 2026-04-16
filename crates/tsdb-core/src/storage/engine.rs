@@ -18,16 +18,20 @@
 //! - `get_point_merged`: 单点查询，1 次 get 获取完整数据点
 
 use crate::error::{Result, TsdbError};
-use crate::rowkey::{RowKey, Qualifier, timestamp_to_cf_name, compute_tags_hash, align_to_block_start, SEPARATOR};
-use crate::storage::cf_manager::{CfManager, CfConfig, METADATA_CF};
-use crate::storage::merge_operand::{MergedBlock, encode_merge_operand, detect_value_format, ValueFormat};
+use crate::rowkey::{
+    align_to_block_start, compute_tags_hash, timestamp_to_cf_name, Qualifier, RowKey, SEPARATOR,
+};
+use crate::storage::cf_manager::{CfConfig, CfManager, METADATA_CF};
+use crate::storage::merge_operand::{
+    detect_value_format, encode_merge_operand, MergedBlock, ValueFormat,
+};
 use crate::storage::options::TsdbOptions;
-use tsdb_types::model::{DataPoint, FieldValue, Tags};
-use rocksdb::{WriteBatch, MultiThreaded};
+use chrono::NaiveDate;
+use rocksdb::{MultiThreaded, WriteBatch};
 use std::path::Path;
 use std::sync::Arc;
-use chrono::NaiveDate;
-use tsdb_compress::codec::{BlockCodec, Codec, DataBlock, CompressedBlock};
+use tsdb_compress::codec::{BlockCodec, Codec, CompressedBlock, DataBlock};
+use tsdb_types::model::{DataPoint, FieldValue, Tags};
 
 /// TSDB 数据库类型别名
 ///
@@ -79,15 +83,16 @@ impl StorageEngine {
 
         // 配置 metadata CF
         let metadata_cf_opts = TsdbOptions::metadata_cf_opts();
-        let cfs = vec![(
-            METADATA_CF,
-            metadata_cf_opts,
-        )];
+        let cfs = vec![(METADATA_CF, metadata_cf_opts)];
 
         // 打开数据库
-        let db = TsdbDB::open_cf_descriptors(&opts, path, cfs.into_iter().map(|(name, opts)| {
-            rocksdb::ColumnFamilyDescriptor::new(name, opts)
-        })).map_err(|e| TsdbError::Storage(format!("failed to open DB: {}", e)))?;
+        let db = TsdbDB::open_cf_descriptors(
+            &opts,
+            path,
+            cfs.into_iter()
+                .map(|(name, opts)| rocksdb::ColumnFamilyDescriptor::new(name, opts)),
+        )
+        .map_err(|e| TsdbError::Storage(format!("failed to open DB: {}", e)))?;
 
         let db = Arc::new(db);
         let cf_manager = CfManager::new(Arc::clone(&db), cf_config);
@@ -147,7 +152,8 @@ impl StorageEngine {
             let value_bytes = encode_field_value(field_value);
 
             // 写入 RocksDB
-            self.db.put_cf(&cf, &key_bytes, &value_bytes)
+            self.db
+                .put_cf(&cf, &key_bytes, &value_bytes)
                 .map_err(|e| TsdbError::Storage(format!("write failed: {}", e)))?;
         }
 
@@ -191,7 +197,8 @@ impl StorageEngine {
         }
 
         // 批量提交
-        self.db.write(batch)
+        self.db
+            .write(batch)
             .map_err(|e| TsdbError::Storage(format!("batch write failed: {}", e)))?;
 
         Ok(())
@@ -247,15 +254,13 @@ impl StorageEngine {
             let qualifier = Qualifier::new(field_name, dp.timestamp, block_start);
 
             // 编码 MergeOperand
-            let operand = encode_merge_operand(
-                field_name,
-                qualifier.microsecond_offset,
-                field_value,
-            );
+            let operand =
+                encode_merge_operand(field_name, qualifier.microsecond_offset, field_value);
 
             // 执行 merge 操作
             // RocksDB 会自动调用 tsdb_block_merge 函数合并
-            self.db.merge_cf(&cf, &rk_bytes, operand)
+            self.db
+                .merge_cf(&cf, &rk_bytes, operand)
                 .map_err(|e| TsdbError::Storage(format!("merge failed: {}", e)))?;
         }
 
@@ -289,17 +294,15 @@ impl StorageEngine {
 
             for (field_name, field_value) in &dp.fields {
                 let qualifier = Qualifier::new(field_name, dp.timestamp, block_start);
-                let operand = encode_merge_operand(
-                    field_name,
-                    qualifier.microsecond_offset,
-                    field_value,
-                );
+                let operand =
+                    encode_merge_operand(field_name, qualifier.microsecond_offset, field_value);
                 batch.merge_cf(&cf, &rk_bytes, operand);
             }
         }
 
         // 批量提交
-        self.db.write(batch)
+        self.db
+            .write(batch)
             .map_err(|e| TsdbError::Storage(format!("merged batch write failed: {}", e)))?;
 
         Ok(())
@@ -384,9 +387,15 @@ impl StorageEngine {
                                     // 纯 RowKey（MergeOperator 写入）
                                     if let Some(rk) = RowKey::decode(&key) {
                                         if let Some(block) = MergedBlock::decode(&value) {
-                                            let dps = block.to_data_points(&rk.measurement, rk.block_start_timestamp, tags.clone());
+                                            let dps = block.to_data_points(
+                                                &rk.measurement,
+                                                rk.block_start_timestamp,
+                                                tags.clone(),
+                                            );
                                             for dp in dps {
-                                                if dp.timestamp >= start_micros && dp.timestamp <= end_micros {
+                                                if dp.timestamp >= start_micros
+                                                    && dp.timestamp <= end_micros
+                                                {
                                                     results.push(dp);
                                                 }
                                             }
@@ -400,9 +409,15 @@ impl StorageEngine {
                             let rk_data = &key[..sep_pos];
                             if let Some(rk) = RowKey::decode(rk_data) {
                                 if let Some(block) = MergedBlock::decode(&value) {
-                                    let dps = block.to_data_points(&rk.measurement, rk.block_start_timestamp, tags.clone());
+                                    let dps = block.to_data_points(
+                                        &rk.measurement,
+                                        rk.block_start_timestamp,
+                                        tags.clone(),
+                                    );
                                     for dp in dps {
-                                        if dp.timestamp >= start_micros && dp.timestamp <= end_micros {
+                                        if dp.timestamp >= start_micros
+                                            && dp.timestamp <= end_micros
+                                        {
                                             results.push(dp);
                                         }
                                     }
@@ -424,7 +439,8 @@ impl StorageEngine {
                             if let Some(rk) = RowKey::decode(rk_data) {
                                 if let Some(qual) = Qualifier::decode(qual_data) {
                                     // 计算绝对时间戳
-                                    let ts = rk.block_start_timestamp + qual.microsecond_offset as i64;
+                                    let ts =
+                                        rk.block_start_timestamp + qual.microsecond_offset as i64;
 
                                     // 检查时间范围
                                     if ts >= start_micros && ts <= end_micros {
@@ -565,13 +581,15 @@ impl StorageEngine {
         key.push(0xFF);
 
         let codec = BlockCodec;
-        let compressed = codec.compress_block(block)
+        let compressed = codec
+            .compress_block(block)
             .map_err(|e| TsdbError::Storage(format!("block compression failed: {}", e)))?;
 
         let compressed_bytes = bincode::serialize(&compressed)
             .map_err(|e| TsdbError::Storage(format!("block serialization failed: {}", e)))?;
 
-        self.db.put_cf(&cf, &key, &compressed_bytes)
+        self.db
+            .put_cf(&cf, &key, &compressed_bytes)
             .map_err(|e| TsdbError::Storage(format!("compressed write failed: {}", e)))?;
 
         Ok(())
@@ -614,11 +632,13 @@ impl StorageEngine {
 
         match self.db.get_cf(&cf, &key) {
             Ok(Some(value)) => {
-                let compressed: CompressedBlock = bincode::deserialize(&value)
-                    .map_err(|e| TsdbError::Storage(format!("block deserialization failed: {}", e)))?;
+                let compressed: CompressedBlock = bincode::deserialize(&value).map_err(|e| {
+                    TsdbError::Storage(format!("block deserialization failed: {}", e))
+                })?;
                 let codec = BlockCodec;
-                let block = codec.decompress_block(&compressed)
-                    .map_err(|e| TsdbError::Storage(format!("block decompression failed: {}", e)))?;
+                let block = codec.decompress_block(&compressed).map_err(|e| {
+                    TsdbError::Storage(format!("block decompression failed: {}", e))
+                })?;
 
                 let mut results = Vec::new();
                 for (i, &ts) in block.timestamps.iter().enumerate() {
@@ -700,9 +720,15 @@ impl StorageEngine {
                             ValueFormat::Merged => {
                                 if let Some(rk) = RowKey::decode(&key) {
                                     if let Some(block) = MergedBlock::decode(&value) {
-                                        let dps = block.to_data_points(&rk.measurement, rk.block_start_timestamp, tags.clone());
+                                        let dps = block.to_data_points(
+                                            &rk.measurement,
+                                            rk.block_start_timestamp,
+                                            tags.clone(),
+                                        );
                                         for dp in dps {
-                                            if dp.timestamp >= start_micros && dp.timestamp <= end_micros {
+                                            if dp.timestamp >= start_micros
+                                                && dp.timestamp <= end_micros
+                                            {
                                                 results.push(dp);
                                             }
                                         }
@@ -718,7 +744,8 @@ impl StorageEngine {
                                 let qual_data = &key[sep_pos + 1..];
                                 if let Some(rk) = RowKey::decode(rk_data) {
                                     if let Some(qual) = Qualifier::decode(qual_data) {
-                                        let ts = rk.block_start_timestamp + qual.microsecond_offset as i64;
+                                        let ts = rk.block_start_timestamp
+                                            + qual.microsecond_offset as i64;
                                         if ts >= start_micros && ts <= end_micros {
                                             let fv = decode_field_value(&value);
                                             let mut dp = DataPoint::new(&rk.measurement, ts);
@@ -747,10 +774,7 @@ impl StorageEngine {
     ///
     /// 将 IndexManager 的所有索引数据序列化后写入 RocksDB 的 metadata 列族。
     /// 建议在服务关闭前或定期（如每 5 分钟）调用。
-    pub fn persist_index(
-        &self,
-        index_manager: &tsdb_index::IndexManager,
-    ) -> Result<()> {
+    pub fn persist_index(&self, index_manager: &tsdb_index::IndexManager) -> Result<()> {
         let cf = self.cf_manager.cf_handle(METADATA_CF)?;
         let serialized = index_manager.serialize_all();
 
@@ -759,7 +783,8 @@ impl StorageEngine {
             batch.put_cf(&cf, key.as_bytes(), value);
         }
 
-        self.db.write(batch)
+        self.db
+            .write(batch)
             .map_err(|e| TsdbError::Storage(format!("index persist failed: {}", e)))?;
 
         Ok(())
@@ -769,10 +794,7 @@ impl StorageEngine {
     ///
     /// 启动时调用，从 RocksDB 的 metadata 列族读取序列化的索引数据，
     /// 逐条反序列化并填充到 IndexManager 中。
-    pub fn restore_index(
-        &self,
-        index_manager: &mut tsdb_index::IndexManager,
-    ) -> Result<usize> {
+    pub fn restore_index(&self, index_manager: &mut tsdb_index::IndexManager) -> Result<usize> {
         let cf = self.cf_manager.cf_handle(METADATA_CF)?;
         let mut restored_count = 0;
 
@@ -849,8 +871,8 @@ fn micros_to_date(micros: i64) -> NaiveDate {
 fn encode_field_value(v: &FieldValue) -> Vec<u8> {
     match v {
         FieldValue::Float(f) => {
-            let mut buf = vec![0u8];  // 类型标识
-            buf.extend_from_slice(&f.to_be_bytes());  // 大端序
+            let mut buf = vec![0u8]; // 类型标识
+            buf.extend_from_slice(&f.to_be_bytes()); // 大端序
             buf
         }
         FieldValue::Integer(i) => {
@@ -860,7 +882,7 @@ fn encode_field_value(v: &FieldValue) -> Vec<u8> {
         }
         FieldValue::String(s) => {
             let mut buf = vec![2u8];
-            buf.extend_from_slice(&(s.len() as u32).to_be_bytes());  // 长度前缀
+            buf.extend_from_slice(&(s.len() as u32).to_be_bytes()); // 长度前缀
             buf.extend_from_slice(s.as_bytes());
             buf
         }
@@ -904,9 +926,7 @@ fn decode_field_value(data: &[u8]) -> Option<FieldValue> {
             Some(FieldValue::String(s))
         }
         // Boolean: 类型(1) + value(1)
-        3 => {
-            Some(FieldValue::Boolean(data.get(1)? == &1))
-        }
+        3 => Some(FieldValue::Boolean(data.get(1)? == &1)),
         _ => None,
     }
 }

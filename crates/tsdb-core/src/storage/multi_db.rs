@@ -24,8 +24,8 @@
 //! 使用 `RwLock<HashMap>` 保护内部映射表，支持多线程并发读取和写入。
 
 use crate::error::{Result, TsdbError};
-use crate::storage::StorageEngine;
 use crate::storage::cf_manager::CfConfig;
+use crate::storage::StorageEngine;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -66,7 +66,10 @@ impl MultiDbManager {
         {
             let dbs = self.databases.read().unwrap();
             if dbs.contains_key(name) {
-                return Err(TsdbError::Storage(format!("database '{}' already exists", name)));
+                return Err(TsdbError::Storage(format!(
+                    "database '{}' already exists",
+                    name
+                )));
             }
         }
 
@@ -76,7 +79,10 @@ impl MultiDbManager {
         let engine = StorageEngine::open(&db_path, self.cf_config.clone())?;
         let engine = Arc::new(engine);
 
-        self.databases.write().unwrap().insert(name.to_string(), Arc::clone(&engine));
+        self.databases
+            .write()
+            .unwrap()
+            .insert(name.to_string(), Arc::clone(&engine));
 
         info!("database '{}' created at {:?}", name, db_path);
         Ok(engine)
@@ -91,7 +97,9 @@ impl MultiDbManager {
     /// - `Ok(Arc<StorageEngine>)`: 找到对应实例
     /// - `Err(TsdbError::NotFound)`: 数据库不存在
     pub fn get_database(&self, name: &str) -> Result<Arc<StorageEngine>> {
-        self.databases.read().unwrap()
+        self.databases
+            .read()
+            .unwrap()
             .get(name)
             .cloned()
             .ok_or_else(|| TsdbError::NotFound(format!("database '{}'", name)))
@@ -106,7 +114,9 @@ impl MultiDbManager {
     /// - `name`: 待删除的数据库名称
     pub fn drop_database(&self, name: &str) -> Result<()> {
         if name == "default" {
-            return Err(TsdbError::Storage("cannot drop the default database".into()));
+            return Err(TsdbError::Storage(
+                "cannot drop the default database".into(),
+            ));
         }
 
         let removed = self.databases.write().unwrap().remove(name);

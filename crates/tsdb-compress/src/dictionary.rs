@@ -73,7 +73,8 @@ impl DictionaryEncoder {
 
         let value_bytes = value.as_bytes();
         self.encoded.push(1u8);
-        self.encoded.extend_from_slice(&(value_bytes.len() as u16).to_be_bytes());
+        self.encoded
+            .extend_from_slice(&(value_bytes.len() as u16).to_be_bytes());
         self.encoded.extend_from_slice(value_bytes);
         self.encoded.extend_from_slice(&id.to_be_bytes());
 
@@ -142,7 +143,11 @@ impl DictionaryDecoder {
             let value = String::from_utf8_lossy(&data[pos..pos + len]).to_string();
             pos += len;
 
-            let id = u32::from_be_bytes(data[pos..pos + 4].try_into().map_err(|_| CompressError::Decode("invalid id".into()))?);
+            let id = u32::from_be_bytes(
+                data[pos..pos + 4]
+                    .try_into()
+                    .map_err(|_| CompressError::Decode("invalid id".into()))?,
+            );
             pos += 4;
 
             dictionary.insert(id, value);

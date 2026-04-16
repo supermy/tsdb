@@ -16,8 +16,8 @@
 //! | month| 30 天  | 月报/容量规划 |
 //!
 
-use tsdb_types::model::DataPoint;
 use std::collections::HashMap;
+use tsdb_types::model::DataPoint;
 
 /// 时间维度枚举 — 定义聚合窗口的粒度
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -116,7 +116,9 @@ impl Default for Aggregator {
 
 impl Aggregator {
     pub fn new() -> Self {
-        Self { buckets: HashMap::new() }
+        Self {
+            buckets: HashMap::new(),
+        }
     }
 
     /// 将单个数据点累加到对应的聚合分桶中
@@ -129,11 +131,18 @@ impl Aggregator {
     /// # 参数
     /// - `dp`: 待聚合的原始数据点
     pub fn accumulate(&mut self, dp: &DataPoint) {
-        for &dim in &[TimeDimension::Hour, TimeDimension::Day, TimeDimension::Week, TimeDimension::Month] {
+        for &dim in &[
+            TimeDimension::Hour,
+            TimeDimension::Day,
+            TimeDimension::Week,
+            TimeDimension::Month,
+        ] {
             let window_start = dim.align_timestamp(dp.timestamp);
             let bucket_key = format!("{}:{}:{}", dp.measurement, dim.name(), window_start);
 
-            let entry = self.buckets.entry(bucket_key)
+            let entry = self
+                .buckets
+                .entry(bucket_key)
                 .or_insert_with(|| (HashMap::new(), 0));
 
             for (field_name, field_value) in &dp.fields {
@@ -156,11 +165,17 @@ impl Aggregator {
     ///
     /// # 返回
     /// 该维度下的所有聚合窗口结果列表（按 window_start 升序排列）
-    pub fn finalize(&mut self, measurement: &str, dimension: TimeDimension) -> Vec<AggregationResult> {
+    pub fn finalize(
+        &mut self,
+        measurement: &str,
+        dimension: TimeDimension,
+    ) -> Vec<AggregationResult> {
         let prefix = format!("{}:{}:", measurement, dimension.name());
         let mut results: Vec<AggregationResult> = Vec::new();
 
-        let keys: Vec<String> = self.buckets.keys()
+        let keys: Vec<String> = self
+            .buckets
+            .keys()
             .filter(|k| k.starts_with(&prefix))
             .cloned()
             .collect();
@@ -173,7 +188,8 @@ impl Aggregator {
                 let parts: Vec<&str> = key.rsplitn(2, ':').collect();
                 let window_start = parts[0].parse().unwrap_or(0);
 
-                let avg_values: HashMap<String, f64> = values.into_iter()
+                let avg_values: HashMap<String, f64> = values
+                    .into_iter()
                     .map(|(k, v)| (k, v / count as f64))
                     .collect();
 
@@ -202,7 +218,10 @@ mod tests {
 
     #[test]
     fn test_time_dimension_align() {
-        assert_eq!(TimeDimension::Day.align_timestamp(1_713_158_400_000_000), 1_713_139_200_000_000);
+        assert_eq!(
+            TimeDimension::Day.align_timestamp(1_713_158_400_000_000),
+            1_713_139_200_000_000
+        );
     }
 
     #[test]
@@ -210,11 +229,17 @@ mod tests {
         let mut agg = Aggregator::new();
 
         let mut dp1 = DataPoint::new("cpu", 1_713_158_400_000_000);
-        dp1.fields.insert("usage".to_string(), tsdb_types::model::FieldValue::Float(10.0));
+        dp1.fields.insert(
+            "usage".to_string(),
+            tsdb_types::model::FieldValue::Float(10.0),
+        );
         agg.accumulate(&dp1);
 
         let mut dp2 = DataPoint::new("cpu", 1_713_158_500_000_000);
-        dp2.fields.insert("usage".to_string(), tsdb_types::model::FieldValue::Float(20.0));
+        dp2.fields.insert(
+            "usage".to_string(),
+            tsdb_types::model::FieldValue::Float(20.0),
+        );
         agg.accumulate(&dp2);
 
         let results = agg.finalize("cpu", TimeDimension::Day);

@@ -29,14 +29,18 @@
 //! ```
 
 use clap::{Parser, Subcommand};
-use tsdb_config::TsdbConfig;
 use std::path::PathBuf;
+use tsdb_config::TsdbConfig;
 
 /// TSDB 命令行客户端
 ///
 /// 使用 `clap` 库解析命令行参数，支持子命令模式。
 #[derive(Parser)]
-#[command(name = "tsdb-cli", version = "0.1.0", about = "TSDB command line client")]
+#[command(
+    name = "tsdb-cli",
+    version = "0.1.0",
+    about = "TSDB command line client"
+)]
 struct Cli {
     /// 子命令
     #[command(subcommand)]
@@ -57,22 +61,47 @@ struct Cli {
 /// 子命令枚举
 #[derive(Subcommand)]
 enum Commands {
-    Start { #[arg(long, default_value = "config.ini")] config: PathBuf },
-    Query { sql: String },
+    Start {
+        #[arg(long, default_value = "config.ini")]
+        config: PathBuf,
+    },
+    Query {
+        sql: String,
+    },
     Write {
-        #[arg(long)] measurement: String,
-        #[arg(long)] tags: Option<String>,
-        #[arg(long)] fields: String,
-        #[arg(long, default_value_t = 0)] timestamp: i64,
+        #[arg(long)]
+        measurement: String,
+        #[arg(long)]
+        tags: Option<String>,
+        #[arg(long)]
+        fields: String,
+        #[arg(long, default_value_t = 0)]
+        timestamp: i64,
     },
     Ping,
     List,
     /// 创建新数据库
-    CreateDb { name: String },
+    CreateDb {
+        name: String,
+    },
     /// 删除数据库
-    DropDb { name: String },
-    LoadTsbs { #[arg(long)] input: PathBuf, #[arg(long, default_value_t = 1000)] batch_size: usize },
-    GenerateTsbs { #[arg(long, default_value_t = 100)] scale: usize, #[arg(long, default_value = "24h")] duration: String, #[arg(long, default_value = "tsbs_data.json")] output: PathBuf },
+    DropDb {
+        name: String,
+    },
+    LoadTsbs {
+        #[arg(long)]
+        input: PathBuf,
+        #[arg(long, default_value_t = 1000)]
+        batch_size: usize,
+    },
+    GenerateTsbs {
+        #[arg(long, default_value_t = 100)]
+        scale: usize,
+        #[arg(long, default_value = "24h")]
+        duration: String,
+        #[arg(long, default_value = "tsbs_data.json")]
+        output: PathBuf,
+    },
 }
 
 /// 程序入口函数
@@ -89,20 +118,38 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Query { sql } => {
             let addr = format!("{}:{}", cli.host, cli.port);
-            send_request(&addr, tsdb_server::protocol::Request::Query { database: cli.database.clone(), sql })?;
+            send_request(
+                &addr,
+                tsdb_server::protocol::Request::Query {
+                    database: cli.database.clone(),
+                    sql,
+                },
+            )?;
         }
-        Commands::Write { measurement, tags, fields, timestamp } => {
+        Commands::Write {
+            measurement,
+            tags,
+            fields,
+            timestamp,
+        } => {
             let tag_pairs = parse_kv_pairs(tags.as_deref());
             let field_pairs = parse_field_values(&fields);
-            let ts = if timestamp == 0 { chrono::Utc::now().timestamp_micros() } else { timestamp };
+            let ts = if timestamp == 0 {
+                chrono::Utc::now().timestamp_micros()
+            } else {
+                timestamp
+            };
             let addr = format!("{}:{}", cli.host, cli.port);
-            send_request(&addr, tsdb_server::protocol::Request::Write {
-                database: cli.database.clone(),
-                measurement,
-                tags: tag_pairs,
-                fields: field_pairs,
-                timestamp: ts,
-            })?;
+            send_request(
+                &addr,
+                tsdb_server::protocol::Request::Write {
+                    database: cli.database.clone(),
+                    measurement,
+                    tags: tag_pairs,
+                    fields: field_pairs,
+                    timestamp: ts,
+                },
+            )?;
         }
         Commands::Ping => {
             let addr = format!("{}:{}", cli.host, cli.port);
@@ -114,14 +161,25 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::CreateDb { name } => {
             let addr = format!("{}:{}", cli.host, cli.port);
-            send_request(&addr, tsdb_server::protocol::Request::CreateDatabase { name })?;
+            send_request(
+                &addr,
+                tsdb_server::protocol::Request::CreateDatabase { name },
+            )?;
         }
         Commands::DropDb { name } => {
             let addr = format!("{}:{}", cli.host, cli.port);
             send_request(&addr, tsdb_server::protocol::Request::DropDatabase { name })?;
         }
-        Commands::LoadTsbs { input, batch_size } => { load_tsbs_data(&input, batch_size)?; }
-        Commands::GenerateTsbs { scale, duration, output } => { generate_tsbs_data(scale, &duration, &output)?; }
+        Commands::LoadTsbs { input, batch_size } => {
+            load_tsbs_data(&input, batch_size)?;
+        }
+        Commands::GenerateTsbs {
+            scale,
+            duration,
+            output,
+        } => {
+            generate_tsbs_data(scale, &duration, &output)?;
+        }
     }
 
     Ok(())
@@ -154,7 +212,7 @@ fn main() -> anyhow::Result<()> {
 /// ```
 fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<()> {
     use std::io::BufRead;
-    use tsdb_server::protocol::{Request, FieldValueProto};
+    use tsdb_server::protocol::{FieldValueProto, Request};
 
     // 打开文件并创建缓冲读取器
     let file = std::fs::File::open(path)?;
@@ -169,7 +227,9 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
     for line in reader.lines() {
         let line = line?;
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         // 解析 JSON
         let json: serde_json::Value = match serde_json::from_str(line) {
@@ -178,8 +238,12 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
         };
 
         // 提取字段
-        let measurement = json["measurement"].as_str().unwrap_or("unknown").to_string();
-        let timestamp = json["timestamp"].as_str()
+        let measurement = json["measurement"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string();
+        let timestamp = json["timestamp"]
+            .as_str()
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.timestamp_micros())
             .unwrap_or_else(|| chrono::Utc::now().timestamp_micros());
@@ -214,7 +278,13 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
         }
 
         // 添加到批次
-        batch.push(Request::Write { database: String::new(), measurement, tags, fields, timestamp });
+        batch.push(Request::Write {
+            database: String::new(),
+            measurement,
+            tags,
+            fields,
+            timestamp,
+        });
 
         // 批量发送
         if batch.len() >= batch_size {
@@ -242,7 +312,10 @@ fn load_tsbs_data(path: &std::path::Path, batch_size: usize) -> anyhow::Result<(
     // 显示最终统计
     let elapsed = start.elapsed().as_secs_f64();
     let throughput = total as f64 / elapsed;
-    println!("\nLoaded {} points in {:.2}s ({:.0} pts/sec)", total, elapsed, throughput);
+    println!(
+        "\nLoaded {} points in {:.2}s ({:.0} pts/sec)",
+        total, elapsed, throughput
+    );
 
     Ok(())
 }
@@ -293,10 +366,14 @@ fn send_request_silent(addr: &str, request: tsdb_server::protocol::Request) -> a
 /// - usage_idle: 空闲 CPU 比例
 /// - usage_nice: nice 值 CPU 使用率
 /// - usage_iowait: I/O 等待 CPU 比例
-fn generate_tsbs_data(scale: usize, duration: &str, output: &std::path::Path) -> anyhow::Result<()> {
+fn generate_tsbs_data(
+    scale: usize,
+    duration: &str,
+    output: &std::path::Path,
+) -> anyhow::Result<()> {
     // 解析持续时间
     let duration_secs = parse_duration(duration)?;
-    let interval_secs: u64 = 10;  // 10 秒采集间隔
+    let interval_secs: u64 = 10; // 10 秒采集间隔
     let points_per_device = (duration_secs / interval_secs) as usize;
     let total_points = scale * points_per_device;
 
@@ -308,7 +385,8 @@ fn generate_tsbs_data(scale: usize, duration: &str, output: &std::path::Path) ->
     println!("  Total points: {}", total_points);
 
     // 创建输出文件
-    let mut file: Box<dyn std::io::Write> = Box::new(std::io::BufWriter::new(std::fs::File::create(output)?));
+    let mut file: Box<dyn std::io::Write> =
+        Box::new(std::io::BufWriter::new(std::fs::File::create(output)?));
     let base_ts = chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")?.timestamp_micros();
 
     let mut count = 0u64;
@@ -346,7 +424,12 @@ fn generate_tsbs_data(scale: usize, duration: &str, output: &std::path::Path) ->
 
         // 显示进度
         if device_id % 100 == 0 {
-            eprint!("\rGenerated {}/{} devices ({:.0}%)", device_id, scale, device_id as f64 / scale as f64 * 100.0);
+            eprint!(
+                "\rGenerated {}/{} devices ({:.0}%)",
+                device_id,
+                scale,
+                device_id as f64 / scale as f64 * 100.0
+            );
         }
     }
 
@@ -432,7 +515,7 @@ fn parse_field_values(input: &str) -> Vec<(String, tsdb_server::protocol::FieldV
 /// 通过 TCP 连接发送请求，并打印服务端响应。
 fn send_request(addr: &str, request: tsdb_server::protocol::Request) -> anyhow::Result<()> {
     use std::io::{Read, Write};
-    use tsdb_server::protocol::{encode_request, decode_response};
+    use tsdb_server::protocol::{decode_response, encode_request};
 
     let mut stream = std::net::TcpStream::connect(addr)?;
 
@@ -453,8 +536,8 @@ fn send_request(addr: &str, request: tsdb_server::protocol::Request) -> anyhow::
     stream.read_exact(&mut resp_data)?;
 
     // 解码并显示响应
-    let response = decode_response(&resp_data)
-        .ok_or_else(|| anyhow::anyhow!("failed to decode response"))?;
+    let response =
+        decode_response(&resp_data).ok_or_else(|| anyhow::anyhow!("failed to decode response"))?;
 
     match response {
         tsdb_server::protocol::Response::Ok => println!("OK"),
@@ -470,7 +553,10 @@ fn send_request(addr: &str, request: tsdb_server::protocol::Request) -> anyhow::
             println!("{}", columns.join("\t"));
             // 显示数据行
             for row in rows {
-                let vals: Vec<String> = row.iter().map(|v: &tsdb_server::protocol::FieldValueProto| format!("{:?}", v)).collect();
+                let vals: Vec<String> = row
+                    .iter()
+                    .map(|v: &tsdb_server::protocol::FieldValueProto| format!("{:?}", v))
+                    .collect();
                 println!("{}", vals.join("\t"));
             }
         }

@@ -21,11 +21,11 @@
 //! ```
 //!
 
-use crate::parser::{SqlParser, ParsedQuery, SelectField, AggFunc};
+use crate::parser::{AggFunc, ParsedQuery, SelectField, SqlParser};
 use crate::plan::QueryPlanner;
-use tsdb_core::storage::StorageEngine;
-use tsdb_types::model::{FieldValue, DataPoint};
 use thiserror::Error;
+use tsdb_core::storage::StorageEngine;
+use tsdb_types::model::{DataPoint, FieldValue};
 
 /// 查询结果集 — 执行完成后返回的数据表格
 #[derive(Debug)]
@@ -86,22 +86,20 @@ impl QueryEngine {
     /// - `Ok(QueryResult)`: 包含列名和数据行的结果集
     /// - `Err(QueryError)`: 解析、规划或执行阶段的错误
     pub fn execute(&self, sql: &str, db: &StorageEngine) -> Result<QueryResult, QueryError> {
-        let parsed = self.parser.parse(sql)
+        let parsed = self
+            .parser
+            .parse(sql)
             .map_err(|e| QueryError::Parse(e.to_string()))?;
 
-        let plan = self.planner.plan(&parsed)
+        let plan = self
+            .planner
+            .plan(&parsed)
             .map_err(|e| QueryError::Execution(e.to_string()))?;
 
         match plan.scan_type {
-            crate::plan::ScanType::FullScan => {
-                self.execute_full_scan(&parsed, db)
-            }
-            crate::plan::ScanType::IndexScan => {
-                self.execute_index_scan(&parsed, db)
-            }
-            crate::plan::ScanType::Aggregation => {
-                self.execute_aggregation(&parsed, db)
-            }
+            crate::plan::ScanType::FullScan => self.execute_full_scan(&parsed, db),
+            crate::plan::ScanType::IndexScan => self.execute_index_scan(&parsed, db),
+            crate::plan::ScanType::Aggregation => self.execute_aggregation(&parsed, db),
         }
     }
 
@@ -116,13 +114,18 @@ impl QueryEngine {
         query: &ParsedQuery,
         db: &StorageEngine,
     ) -> Result<QueryResult, QueryError> {
-        let time_range = query.where_clause.as_ref()
-            .and_then(|w| w.time_range);
+        let time_range = query.where_clause.as_ref().and_then(|w| w.time_range);
 
         let start = time_range.map(|(s, _)| s).unwrap_or(0);
         let end = time_range.map(|(_, e)| e).unwrap_or(i64::MAX);
 
-        let data_points = db.read_range(&query.measurement, &tsdb_types::model::Tags::new(), start, end)
+        let data_points = db
+            .read_range(
+                &query.measurement,
+                &tsdb_types::model::Tags::new(),
+                start,
+                end,
+            )
             .map_err(|e| QueryError::Execution(format!("read_range failed: {}", e)))?;
 
         if data_points.is_empty() {
@@ -146,7 +149,12 @@ impl QueryEngine {
 
             let mut row = vec![FieldValue::Integer(dp.timestamp)];
             for col in &columns[1..] {
-                row.push(dp.fields.get(col).cloned().unwrap_or(FieldValue::Float(f64::NAN)));
+                row.push(
+                    dp.fields
+                        .get(col)
+                        .cloned()
+                        .unwrap_or(FieldValue::Float(f64::NAN)),
+                );
             }
             rows.push(row);
         }
@@ -163,13 +171,18 @@ impl QueryEngine {
         query: &ParsedQuery,
         db: &StorageEngine,
     ) -> Result<QueryResult, QueryError> {
-        let time_range = query.where_clause.as_ref()
-            .and_then(|w| w.time_range);
+        let time_range = query.where_clause.as_ref().and_then(|w| w.time_range);
 
         let start = time_range.map(|(s, _)| s).unwrap_or(0);
         let end = time_range.map(|(_, e)| e).unwrap_or(i64::MAX);
 
-        let data_points = db.read_range(&query.measurement, &tsdb_types::model::Tags::new(), start, end)
+        let data_points = db
+            .read_range(
+                &query.measurement,
+                &tsdb_types::model::Tags::new(),
+                start,
+                end,
+            )
             .map_err(|e| QueryError::Execution(format!("read_range failed: {}", e)))?;
 
         if data_points.is_empty() {
@@ -191,7 +204,12 @@ impl QueryEngine {
             }
             let mut row = vec![FieldValue::Integer(dp.timestamp)];
             for col in &columns[1..] {
-                row.push(dp.fields.get(col).cloned().unwrap_or(FieldValue::Float(f64::NAN)));
+                row.push(
+                    dp.fields
+                        .get(col)
+                        .cloned()
+                        .unwrap_or(FieldValue::Float(f64::NAN)),
+                );
             }
             rows.push(row);
         }
@@ -205,13 +223,18 @@ impl QueryEngine {
         query: &ParsedQuery,
         db: &StorageEngine,
     ) -> Result<QueryResult, QueryError> {
-        let time_range = query.where_clause.as_ref()
-            .and_then(|w| w.time_range);
+        let time_range = query.where_clause.as_ref().and_then(|w| w.time_range);
 
         let start = time_range.map(|(s, _)| s).unwrap_or(0);
         let end = time_range.map(|(_, e)| e).unwrap_or(i64::MAX);
 
-        let data_points = db.read_range(&query.measurement, &tsdb_types::model::Tags::new(), start, end)
+        let data_points = db
+            .read_range(
+                &query.measurement,
+                &tsdb_types::model::Tags::new(),
+                start,
+                end,
+            )
             .map_err(|e| QueryError::Execution(format!("read_range failed: {}", e)))?;
 
         if data_points.is_empty() {
@@ -229,7 +252,9 @@ impl QueryEngine {
 
         for select_field in &query.select_fields {
             if let SelectField::Aggregate { func, field, alias } = select_field {
-                let label = alias.clone().unwrap_or_else(|| format!("{}({})", func, field));
+                let label = alias
+                    .clone()
+                    .unwrap_or_else(|| format!("{}({})", func, field));
                 columns.push(label.clone());
 
                 let simd_func = match func {
@@ -241,8 +266,10 @@ impl QueryEngine {
                     _ => crate::vectorized::simd_agg::SimdAggFunc::Avg,
                 };
 
-                let value = crate::vectorized::VectorizedEngine::execute_aggregate(&batch, field, simd_func)
-                    .unwrap_or(FieldValue::Float(f64::NAN));
+                let value = crate::vectorized::VectorizedEngine::execute_aggregate(
+                    &batch, field, simd_func,
+                )
+                .unwrap_or(FieldValue::Float(f64::NAN));
 
                 rows.push(vec![value]);
             }
@@ -257,7 +284,12 @@ impl QueryEngine {
     fn match_filters(&self, dp: &DataPoint, query: &ParsedQuery) -> bool {
         if let Some(where_clause) = &query.where_clause {
             for (key, value, _op) in &where_clause.tag_filters {
-                if dp.tags.get(key.as_str()).map(|v| v != value).unwrap_or(true) {
+                if dp
+                    .tags
+                    .get(key.as_str())
+                    .map(|v| v != value)
+                    .unwrap_or(true)
+                {
                     return false;
                 }
             }

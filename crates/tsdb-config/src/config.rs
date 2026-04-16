@@ -25,8 +25,8 @@
 //!
 
 use ini::Ini;
-use std::path::{Path, PathBuf};
 use std::env;
+use std::path::{Path, PathBuf};
 
 /// TSDB 全局配置 — 包含所有子系统的运行参数
 #[derive(Debug, Clone)]
@@ -151,37 +151,76 @@ impl TsdbConfig {
     /// - `Ok(TsdbConfig)`: 合并后的完整配置
     /// - `Err(ConfigError)`: 文件不存在或格式错误
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
-        let conf = Ini::load_from_file(path)
-            .map_err(|e| ConfigError::Parse(e.to_string()))?;
+        let conf = Ini::load_from_file(path).map_err(|e| ConfigError::Parse(e.to_string()))?;
 
         let mut config = TsdbConfig::default();
 
         if let Some(section) = conf.section(Some("server")) {
-            config.server.host = section.get("host").map(|s| s.to_string()).unwrap_or(config.server.host);
-            config.server.port = section.get("port").and_then(|s| s.parse().ok()).unwrap_or(config.server.port);
-            config.server.workers = section.get("workers").and_then(|s| s.parse().ok()).unwrap_or(config.server.workers);
+            config.server.host = section
+                .get("host")
+                .map(|s| s.to_string())
+                .unwrap_or(config.server.host);
+            config.server.port = section
+                .get("port")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(config.server.port);
+            config.server.workers = section
+                .get("workers")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(config.server.workers);
         }
 
         if let Some(section) = conf.section(Some("storage")) {
-            config.storage.data_dir = section.get("data_dir").map(PathBuf::from).unwrap_or_else(|| config.storage.data_dir);
-            config.storage.hot_days = section.get("hot_days").and_then(|s| s.parse().ok()).unwrap_or(config.storage.hot_days);
-            config.storage.retention_days = section.get("retention_days").and_then(|s| s.parse().ok()).unwrap_or(config.storage.retention_days);
-            config.storage.block_duration_secs = section.get("block_duration_secs").and_then(|s| s.parse().ok()).unwrap_or(config.storage.block_duration_secs);
-            config.storage.write_buffer_size = section.get("write_buffer_size").and_then(|s| s.parse().ok()).unwrap_or(config.storage.write_buffer_size);
-            config.storage.max_open_files = section.get("max_open_files").and_then(|s| s.parse().ok()).unwrap_or(config.storage.max_open_files);
+            config.storage.data_dir = section
+                .get("data_dir")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| config.storage.data_dir);
+            config.storage.hot_days = section
+                .get("hot_days")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(config.storage.hot_days);
+            config.storage.retention_days = section
+                .get("retention_days")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(config.storage.retention_days);
+            config.storage.block_duration_secs = section
+                .get("block_duration_secs")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(config.storage.block_duration_secs);
+            config.storage.write_buffer_size = section
+                .get("write_buffer_size")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(config.storage.write_buffer_size);
+            config.storage.max_open_files = section
+                .get("max_open_files")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(config.storage.max_open_files);
         }
 
         if let Some(section) = conf.section(Some("aggregate")) {
-            config.aggregate.enabled = section.get("enabled").map(|s| s == "true").unwrap_or(config.aggregate.enabled);
-            config.aggregate.worker_count = section.get("worker_count").and_then(|s| s.parse().ok()).unwrap_or(config.aggregate.worker_count);
-            config.aggregate.time_dimensions = section.get("time_dimensions")
+            config.aggregate.enabled = section
+                .get("enabled")
+                .map(|s| s == "true")
+                .unwrap_or(config.aggregate.enabled);
+            config.aggregate.worker_count = section
+                .get("worker_count")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(config.aggregate.worker_count);
+            config.aggregate.time_dimensions = section
+                .get("time_dimensions")
                 .map(|s| s.split(',').map(|d| d.trim().to_string()).collect())
                 .unwrap_or(config.aggregate.time_dimensions);
-            config.aggregate.nng_url = section.get("nng_url").map(|s| s.to_string()).unwrap_or(config.aggregate.nng_url);
+            config.aggregate.nng_url = section
+                .get("nng_url")
+                .map(|s| s.to_string())
+                .unwrap_or(config.aggregate.nng_url);
         }
 
         if let Some(section) = conf.section(Some("log")) {
-            config.log.level = section.get("level").map(|s| s.to_string()).unwrap_or(config.log.level);
+            config.log.level = section
+                .get("level")
+                .map(|s| s.to_string())
+                .unwrap_or(config.log.level);
             config.log.file = section.get("file").map(PathBuf::from);
         }
 
@@ -198,14 +237,24 @@ impl TsdbConfig {
     ///
     /// 仅覆盖已设置的环境变量，未设置的保持 INI 或默认值不变。
     fn apply_env_overrides(&mut self) {
-        if let Ok(v) = env::var("TSDB_HOST") { self.server.host = v; }
-        if let Ok(v) = env::var("TSDB_PORT") {
-            if let Ok(port) = v.parse() { self.server.port = port; }
+        if let Ok(v) = env::var("TSDB_HOST") {
+            self.server.host = v;
         }
-        if let Ok(v) = env::var("TSDB_DATA_DIR") { self.storage.data_dir = PathBuf::from(v); }
-        if let Ok(v) = env::var("TSDB_LOG_LEVEL") { self.log.level = v; }
+        if let Ok(v) = env::var("TSDB_PORT") {
+            if let Ok(port) = v.parse() {
+                self.server.port = port;
+            }
+        }
+        if let Ok(v) = env::var("TSDB_DATA_DIR") {
+            self.storage.data_dir = PathBuf::from(v);
+        }
+        if let Ok(v) = env::var("TSDB_LOG_LEVEL") {
+            self.log.level = v;
+        }
         if let Ok(v) = env::var("TSDB_RETENTION_DAYS") {
-            if let Ok(days) = v.parse() { self.storage.retention_days = days; }
+            if let Ok(days) = v.parse() {
+                self.storage.retention_days = days;
+            }
         }
     }
 
@@ -224,17 +273,38 @@ impl TsdbConfig {
             .set("workers", self_default().server.workers.to_string());
 
         conf.with_section(Some("storage"))
-            .set("data_dir", self_default().storage.data_dir.to_str().unwrap_or("./data"))
+            .set(
+                "data_dir",
+                self_default().storage.data_dir.to_str().unwrap_or("./data"),
+            )
             .set("hot_days", self_default().storage.hot_days.to_string())
-            .set("retention_days", self_default().storage.retention_days.to_string())
-            .set("block_duration_secs", self_default().storage.block_duration_secs.to_string())
-            .set("write_buffer_size", self_default().storage.write_buffer_size.to_string())
-            .set("max_open_files", self_default().storage.max_open_files.to_string());
+            .set(
+                "retention_days",
+                self_default().storage.retention_days.to_string(),
+            )
+            .set(
+                "block_duration_secs",
+                self_default().storage.block_duration_secs.to_string(),
+            )
+            .set(
+                "write_buffer_size",
+                self_default().storage.write_buffer_size.to_string(),
+            )
+            .set(
+                "max_open_files",
+                self_default().storage.max_open_files.to_string(),
+            );
 
         conf.with_section(Some("aggregate"))
             .set("enabled", self_default().aggregate.enabled.to_string())
-            .set("worker_count", self_default().aggregate.worker_count.to_string())
-            .set("time_dimensions", self_default().aggregate.time_dimensions.join(","))
+            .set(
+                "worker_count",
+                self_default().aggregate.worker_count.to_string(),
+            )
+            .set(
+                "time_dimensions",
+                self_default().aggregate.time_dimensions.join(","),
+            )
             .set("nng_url", &self_default().aggregate.nng_url);
 
         conf.with_section(Some("log"))

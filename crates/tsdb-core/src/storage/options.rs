@@ -14,7 +14,9 @@
 //! | 冷数据 | ZSTD + 禁用自动压缩 | 高压缩比，只读场景 |
 //! | 元数据 | 小 buffer | 数据量小，快速持久化 |
 
-use rocksdb::{Options, BlockBasedOptions, BlockBasedIndexType, DataBlockIndexType, WriteBufferManager};
+use rocksdb::{
+    BlockBasedIndexType, BlockBasedOptions, DataBlockIndexType, Options, WriteBufferManager,
+};
 
 /// TSDB RocksDB 选项工厂
 ///
@@ -57,19 +59,19 @@ impl TsdbOptions {
         let mut opts = Options::default();
 
         // 数据库基础配置
-        opts.create_if_missing(true);              // 如果数据库不存在则创建
+        opts.create_if_missing(true); // 如果数据库不存在则创建
         opts.create_missing_column_families(true); // 自动创建缺失的 CF
 
         // MemTable 配置
-        opts.set_write_buffer_size(64 * 1024 * 1024);  // 64MB MemTable
-        opts.set_max_write_buffer_number(4);            // 最多 4 个 MemTable
-        opts.set_min_write_buffer_number_to_merge(2);   // 至少 2 个才合并
+        opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB MemTable
+        opts.set_max_write_buffer_number(4); // 最多 4 个 MemTable
+        opts.set_min_write_buffer_number_to_merge(2); // 至少 2 个才合并
 
         // Compaction 配置
-        opts.set_level_compaction_dynamic_level_bytes(true);  // 动态层级大小
+        opts.set_level_compaction_dynamic_level_bytes(true); // 动态层级大小
         opts.set_max_bytes_for_level_base(256 * 1024 * 1024); // L1 层 256MB
-        opts.set_target_file_size_base(64 * 1024 * 1024);     // SST 文件 64MB
-        opts.set_max_subcompactions(4);                        // 4 个并发压缩线程
+        opts.set_target_file_size_base(64 * 1024 * 1024); // SST 文件 64MB
+        opts.set_max_subcompactions(4); // 4 个并发压缩线程
 
         // BlockBasedTable 配置（针对时序数据优化）
         let mut block_opts = BlockBasedOptions::default();
@@ -93,7 +95,7 @@ impl TsdbOptions {
         // 数据块内使用二分+哈希混合查找
         // 对于点查询更高效
         block_opts.set_data_block_index_type(DataBlockIndexType::BinaryAndHash);
-        block_opts.set_data_block_hash_ratio(0.75);  // 75% 的数据块使用哈希索引
+        block_opts.set_data_block_hash_ratio(0.75); // 75% 的数据块使用哈希索引
 
         // 创建 128MB LRU BlockCache
         let cache = rocksdb::Cache::new_lru_cache(128 * 1024 * 1024);
@@ -136,15 +138,15 @@ impl TsdbOptions {
         let mut opts = Options::default();
 
         // MemTable 配置（比 default 小，因为热数据 CF 多）
-        opts.set_write_buffer_size(32 * 1024 * 1024);  // 32MB
+        opts.set_write_buffer_size(32 * 1024 * 1024); // 32MB
         opts.set_max_write_buffer_number(3);
 
         // 压缩配置：L0/L1 不压缩，L2/L3 LZ4，L4+ ZSTD
         opts.set_compression_per_level(&[
-            rocksdb::DBCompressionType::None,   // L0: 不压缩，加速写入
-            rocksdb::DBCompressionType::Lz4,    // L1: LZ4 快速压缩
-            rocksdb::DBCompressionType::Lz4,    // L2: LZ4
-            rocksdb::DBCompressionType::Zstd,   // L3+: ZSTD 高压缩比
+            rocksdb::DBCompressionType::None, // L0: 不压缩，加速写入
+            rocksdb::DBCompressionType::Lz4,  // L1: LZ4 快速压缩
+            rocksdb::DBCompressionType::Lz4,  // L2: LZ4
+            rocksdb::DBCompressionType::Zstd, // L3+: ZSTD 高压缩比
         ]);
 
         // 动态层级大小
@@ -180,13 +182,13 @@ impl TsdbOptions {
         let mut opts = Options::default();
 
         // MemTable 配置（最小配置）
-        opts.set_write_buffer_size(16 * 1024 * 1024);  // 16MB
+        opts.set_write_buffer_size(16 * 1024 * 1024); // 16MB
         opts.set_max_write_buffer_number(2);
 
         // 压缩配置：全部使用 ZSTD
         opts.set_compression_per_level(&[
-            rocksdb::DBCompressionType::None,   // L0: 不压缩（临时数据）
-            rocksdb::DBCompressionType::Zstd,   // L1+: ZSTD 高压缩比
+            rocksdb::DBCompressionType::None, // L0: 不压缩（临时数据）
+            rocksdb::DBCompressionType::Zstd, // L1+: ZSTD 高压缩比
             rocksdb::DBCompressionType::Zstd,
             rocksdb::DBCompressionType::Zstd,
         ]);
@@ -220,7 +222,7 @@ impl TsdbOptions {
         let mut opts = Options::default();
 
         // 小 buffer 配置
-        opts.set_write_buffer_size(4 * 1024 * 1024);  // 4MB
+        opts.set_write_buffer_size(4 * 1024 * 1024); // 4MB
         opts.set_max_write_buffer_number(3);
 
         opts
@@ -239,7 +241,10 @@ impl TsdbOptions {
     /// # 返回值
     ///
     /// WriteBufferManager 实例，需在创建所有 DB 实例前创建并共享
-    pub fn create_write_buffer_manager(buffer_size: usize, allow_stall: bool) -> WriteBufferManager {
+    pub fn create_write_buffer_manager(
+        buffer_size: usize,
+        allow_stall: bool,
+    ) -> WriteBufferManager {
         WriteBufferManager::new_write_buffer_manager(buffer_size, allow_stall)
     }
 
@@ -258,7 +263,11 @@ impl TsdbOptions {
         allow_stall: bool,
         cache: &rocksdb::Cache,
     ) -> WriteBufferManager {
-        WriteBufferManager::new_write_buffer_manager_with_cache(buffer_size, allow_stall, cache.clone())
+        WriteBufferManager::new_write_buffer_manager_with_cache(
+            buffer_size,
+            allow_stall,
+            cache.clone(),
+        )
     }
 
     /// 将 WriteBufferManager 应用到 Options

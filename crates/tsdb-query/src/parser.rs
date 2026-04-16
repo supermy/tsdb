@@ -32,8 +32,8 @@
 //! ```
 //!
 
+use sqlparser::ast::{BinaryOperator, Expr, Query, SelectItem, SetExpr, Statement, Value};
 use sqlparser::dialect::GenericDialect;
-use sqlparser::ast::{Statement, Query, SetExpr, SelectItem, Expr, BinaryOperator, Value};
 use sqlparser::parser::Parser;
 use thiserror::Error;
 
@@ -62,7 +62,11 @@ pub enum SelectField {
     /// 普通字段名 `SELECT usage`
     Field(String),
     /// 聚合函数 `SELECT AVG(usage) AS avg_usage`
-    Aggregate { func: AggFunc, field: String, alias: Option<String> },
+    Aggregate {
+        func: AggFunc,
+        field: String,
+        alias: Option<String>,
+    },
 }
 
 /// 支持的聚合函数类型
@@ -176,12 +180,16 @@ impl SqlParser {
             .map_err(|e| ParseError::SqlParse(e.to_string()))?;
 
         if statement.len() != 1 {
-            return Err(ParseError::Unsupported("only single statement supported".into()));
+            return Err(ParseError::Unsupported(
+                "only single statement supported".into(),
+            ));
         }
 
         match &statement[0] {
             Statement::Query(query) => self.parse_query(query),
-            _ => Err(ParseError::Unsupported("only SELECT queries supported".into())),
+            _ => Err(ParseError::Unsupported(
+                "only SELECT queries supported".into(),
+            )),
         }
     }
 
@@ -190,32 +198,41 @@ impl SqlParser {
         let body = &query.body;
         match body.as_ref() {
             SetExpr::Select(select) => {
-                let measurement = select.from.first()
+                let measurement = select
+                    .from
+                    .first()
                     .map(|t| t.relation.to_string())
                     .ok_or_else(|| ParseError::InvalidMeasurement("no table specified".into()))?;
 
-                let select_fields: Vec<SelectField> = select.projection.iter()
+                let select_fields: Vec<SelectField> = select
+                    .projection
+                    .iter()
                     .map(|item| self.parse_select_item(item))
                     .collect::<Result<Vec<_>, _>>()?;
 
-                let where_clause = select.selection.as_ref()
+                let where_clause = select
+                    .selection
+                    .as_ref()
                     .map(|expr| self.parse_where(expr))
                     .transpose()?;
 
                 let group_by = match &select.group_by {
-                    sqlparser::ast::GroupByExpr::Expressions(exprs, _) => {
-                        exprs.iter()
-                            .map(|expr| self.parse_group_by_expr(expr))
-                            .collect::<Result<Vec<_>, _>>()?
-                    }
+                    sqlparser::ast::GroupByExpr::Expressions(exprs, _) => exprs
+                        .iter()
+                        .map(|expr| self.parse_group_by_expr(expr))
+                        .collect::<Result<Vec<_>, _>>()?,
                     sqlparser::ast::GroupByExpr::All(_) => Vec::new(),
                 };
 
-                let order_by = query.order_by.as_ref()
+                let order_by = query
+                    .order_by
+                    .as_ref()
                     .and_then(|ob| ob.exprs.first())
                     .map(|expr| self.parse_order_by(expr));
 
-                let limit = query.limit.as_ref()
+                let limit = query
+                    .limit
+                    .as_ref()
                     .map(|l| l.to_string().parse().unwrap_or(0));
 
                 Ok(ParsedQuery {
@@ -227,7 +244,9 @@ impl SqlParser {
                     limit,
                 })
             }
-            _ => Err(ParseError::Unsupported("only SELECT queries supported".into())),
+            _ => Err(ParseError::Unsupported(
+                "only SELECT queries supported".into(),
+            )),
         }
     }
 
@@ -240,11 +259,18 @@ impl SqlParser {
                     let func_name = func.name.to_string().to_uppercase();
                     let agg = self.parse_agg_func(&func_name)?;
                     let field = self.extract_func_arg(func);
-                    Ok(SelectField::Aggregate { func: agg, field, alias: None })
+                    Ok(SelectField::Aggregate {
+                        func: agg,
+                        field,
+                        alias: None,
+                    })
                 } else if let Expr::Identifier(ident) = expr {
                     Ok(SelectField::Field(ident.value.clone()))
                 } else {
-                    Err(ParseError::Unsupported(format!("unsupported select item: {:?}", item)))
+                    Err(ParseError::Unsupported(format!(
+                        "unsupported select item: {:?}",
+                        item
+                    )))
                 }
             }
             SelectItem::ExprWithAlias { expr, alias } => {
@@ -258,10 +284,16 @@ impl SqlParser {
                         alias: Some(alias.value.clone()),
                     })
                 } else {
-                    Err(ParseError::Unsupported(format!("unsupported select item: {:?}", item)))
+                    Err(ParseError::Unsupported(format!(
+                        "unsupported select item: {:?}",
+                        item
+                    )))
                 }
             }
-            _ => Err(ParseError::Unsupported(format!("unsupported select item: {:?}", item))),
+            _ => Err(ParseError::Unsupported(format!(
+                "unsupported select item: {:?}",
+                item
+            ))),
         }
     }
 
@@ -275,7 +307,10 @@ impl SqlParser {
             "COUNT" => Ok(AggFunc::Count),
             "FIRST" => Ok(AggFunc::First),
             "LAST" => Ok(AggFunc::Last),
-            _ => Err(ParseError::Unsupported(format!("unknown function: {}", name))),
+            _ => Err(ParseError::Unsupported(format!(
+                "unknown function: {}",
+                name
+            ))),
         }
     }
 
@@ -283,14 +318,17 @@ impl SqlParser {
     fn extract_func_arg(&self, func: &sqlparser::ast::Function) -> String {
         match &func.args {
             sqlparser::ast::FunctionArguments::List(list) => {
-                list.args.first()
+                list.args
+                    .first()
                     .and_then(|arg| {
                         if let sqlparser::ast::FunctionArg::Unnamed(arg_expr) = arg {
                             match arg_expr {
                                 sqlparser::ast::FunctionArgExpr::Expr(Expr::Identifier(ident)) => {
                                     return Some(ident.value.clone());
                                 }
-                                sqlparser::ast::FunctionArgExpr::Expr(Expr::Value(Value::Number(n, _))) => {
+                                sqlparser::ast::FunctionArgExpr::Expr(Expr::Value(
+                                    Value::Number(n, _),
+                                )) => {
                                     return Some(n.to_string());
                                 }
                                 _ => {}
@@ -309,7 +347,10 @@ impl SqlParser {
         let mut time_range = None;
         let mut tag_filters = Vec::new();
         self.extract_filters(expr, &mut time_range, &mut tag_filters)?;
-        Ok(WhereClause { time_range, tag_filters })
+        Ok(WhereClause {
+            time_range,
+            tag_filters,
+        })
     }
 
     /// 递归提取 WHERE 中的过滤条件（支持 AND 组合）
@@ -365,7 +406,10 @@ impl SqlParser {
         if let Expr::Identifier(ident) = expr {
             return Ok(GroupByExpr::Tag(ident.value.clone()));
         }
-        Err(ParseError::Unsupported(format!("unsupported GROUP BY: {:?}", expr)))
+        Err(ParseError::Unsupported(format!(
+            "unsupported GROUP BY: {:?}",
+            expr
+        )))
     }
 
     /// 解析 ORDER BY 表达式
@@ -392,7 +436,9 @@ mod tests {
     #[test]
     fn test_aggregate_query() {
         let parser = SqlParser::new();
-        let result = parser.parse("SELECT AVG(cpu) FROM system WHERE host='server01'").unwrap();
+        let result = parser
+            .parse("SELECT AVG(cpu) FROM system WHERE host='server01'")
+            .unwrap();
         assert_eq!(result.measurement, "system");
         if let SelectField::Aggregate { func, .. } = &result.select_fields[0] {
             assert_eq!(*func, AggFunc::Avg);

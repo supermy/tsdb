@@ -28,7 +28,11 @@ impl TimeSeries {
     /// # 参数
     /// - `name`: 序列名称（如 `"cpu"`, `"memory"`）
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), timestamps: Vec::new(), values: Vec::new() }
+        Self {
+            name: name.into(),
+            timestamps: Vec::new(),
+            values: Vec::new(),
+        }
     }
 
     /// 向序列末尾追加单个数据点
@@ -49,8 +53,15 @@ impl TimeSeries {
     pub fn from_pairs(name: impl Into<String>, pairs: Vec<(Timestamp, f64)>) -> Self {
         let mut timestamps = Vec::with_capacity(pairs.len());
         let mut values = Vec::with_capacity(pairs.len());
-        for (ts, v) in pairs { timestamps.push(ts); values.push(v); }
-        Self { name: name.into(), timestamps, values }
+        for (ts, v) in pairs {
+            timestamps.push(ts);
+            values.push(v);
+        }
+        Self {
+            name: name.into(),
+            timestamps,
+            values,
+        }
     }
 
     /// 返回序列中的最小值
@@ -60,22 +71,31 @@ impl TimeSeries {
 
     /// 返回序列中的最大值
     pub fn max_value(&self) -> f64 {
-        self.values.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+        self.values
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max)
     }
 
     /// 返回序列中所有值的算术平均值
     ///
     /// 空序列返回 0.0。
     pub fn avg_value(&self) -> f64 {
-        if self.values.is_empty() { return 0.0; }
+        if self.values.is_empty() {
+            return 0.0;
+        }
         self.values.iter().sum::<f64>() / self.values.len() as f64
     }
 
     /// 返回序列中的数据点数量
-    pub fn len(&self) -> usize { self.values.len() }
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
 
     /// 判断序列是否为空
-    pub fn is_empty(&self) -> bool { self.values.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
 
     /// 下采样 — 将数据点数量缩减到指定上限
     ///
@@ -97,7 +117,9 @@ impl TimeSeries {
     /// # 返回
     /// 下采样后的新 TimeSeries（原序列不变）
     pub fn downsample(&self, max_points: usize) -> TimeSeries {
-        if self.len() <= max_points { return self.clone(); }
+        if self.len() <= max_points {
+            return self.clone();
+        }
 
         let step = self.len() as f64 / max_points as f64;
         let mut new_ts = Vec::with_capacity(max_points);
@@ -106,7 +128,9 @@ impl TimeSeries {
         for i in 0..max_points {
             let start = (i as f64 * step) as usize;
             let end = ((i + 1) as f64 * step).min(self.len() as f64) as usize;
-            if start >= end { continue; }
+            if start >= end {
+                continue;
+            }
 
             // 取桶内均值作为代表值
             let avg: f64 = self.values[start..end].iter().sum::<f64>() / (end - start) as f64;
@@ -115,6 +139,10 @@ impl TimeSeries {
             new_vals.push(avg);
         }
 
-        TimeSeries { name: self.name.clone(), timestamps: new_ts, values: new_vals }
+        TimeSeries {
+            name: self.name.clone(),
+            timestamps: new_ts,
+            values: new_vals,
+        }
     }
 }

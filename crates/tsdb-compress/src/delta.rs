@@ -145,7 +145,7 @@ impl DeltaEncoder {
             let mut byte = (val & 0x7F) as u8;
             val >>= 7;
             if val > 0 {
-                byte |= 0x80;  // 设置继续标志
+                byte |= 0x80; // 设置继续标志
             }
             buf.push(byte);
             if val == 0 {
@@ -204,7 +204,9 @@ impl DeltaDecoder {
                 return Ok(None);
             }
             let ts = i64::from_be_bytes(
-                self.data[self.pos..self.pos + 8].try_into().map_err(|_| CompressError::Decode("invalid timestamp".into()))?
+                self.data[self.pos..self.pos + 8]
+                    .try_into()
+                    .map_err(|_| CompressError::Decode("invalid timestamp".into()))?,
             );
             self.pos += 8;
             self.last_timestamp = ts;
@@ -254,7 +256,9 @@ impl DeltaDecoder {
 
         loop {
             if *pos >= data.len() {
-                return Err(CompressError::Decode("unexpected end of varint data".into()));
+                return Err(CompressError::Decode(
+                    "unexpected end of varint data".into(),
+                ));
             }
             let byte = data[*pos];
             *pos += 1;

@@ -16,10 +16,10 @@
 //! └── crc32: u32 LE        — payload 的 CRC32 校验
 //! ```
 
-use std::io::{Write, Read, BufWriter, BufReader};
+use std::fs::{File, OpenOptions};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::fs::{File, OpenOptions};
 
 const ENTRY_INSERT: u8 = 0;
 const ENTRY_DELETE: u8 = 1;
@@ -34,10 +34,7 @@ pub struct IndexWAL {
 
 impl IndexWAL {
     pub fn open(path: &Path) -> std::io::Result<Self> {
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
 
         let seq = Self::recover_max_sequence(path)?;
 
@@ -79,7 +76,8 @@ impl IndexWAL {
         writer.write_all(&buf)?;
         writer.flush()?;
 
-        self.bytes_written.fetch_add(4 + buf.len() as u64, Ordering::Relaxed);
+        self.bytes_written
+            .fetch_add(4 + buf.len() as u64, Ordering::Relaxed);
 
         Ok(seq)
     }
@@ -92,7 +90,7 @@ impl IndexWAL {
         loop {
             let mut len_buf = [0u8; 4];
             match reader.read_exact(&mut len_buf) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(_) => break,
             }
             let entry_len = u32::from_le_bytes(len_buf) as usize;
@@ -102,7 +100,7 @@ impl IndexWAL {
 
             let mut entry_buf = vec![0u8; entry_len];
             match reader.read_exact(&mut entry_buf) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(_) => break,
             }
 
@@ -112,7 +110,8 @@ impl IndexWAL {
 
             let entry_type = entry_buf[0];
             let sequence = u64::from_le_bytes(entry_buf[1..9].try_into().unwrap_or([0; 8]));
-            let payload_len = u32::from_le_bytes(entry_buf[9..13].try_into().unwrap_or([0; 4])) as usize;
+            let payload_len =
+                u32::from_le_bytes(entry_buf[9..13].try_into().unwrap_or([0; 4])) as usize;
 
             if entry_buf.len() < 13 + payload_len + 4 {
                 break;
@@ -122,7 +121,7 @@ impl IndexWAL {
             let stored_crc = u32::from_le_bytes(
                 entry_buf[13 + payload_len..13 + payload_len + 4]
                     .try_into()
-                    .unwrap_or([0; 4])
+                    .unwrap_or([0; 4]),
             );
 
             let computed_crc = crc32fast::hash(&payload);
@@ -173,9 +172,15 @@ pub struct WALEntry {
 }
 
 impl WALEntry {
-    pub fn is_insert(&self) -> bool { self.entry_type == ENTRY_INSERT }
-    pub fn is_delete(&self) -> bool { self.entry_type == ENTRY_DELETE }
-    pub fn is_checkpoint(&self) -> bool { self.entry_type == ENTRY_CHECKPOINT }
+    pub fn is_insert(&self) -> bool {
+        self.entry_type == ENTRY_INSERT
+    }
+    pub fn is_delete(&self) -> bool {
+        self.entry_type == ENTRY_DELETE
+    }
+    pub fn is_checkpoint(&self) -> bool {
+        self.entry_type == ENTRY_CHECKPOINT
+    }
 }
 
 #[cfg(test)]
