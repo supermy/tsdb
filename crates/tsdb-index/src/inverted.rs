@@ -61,6 +61,11 @@ impl InvertedIndex {
     }
 
     pub fn add_series(&mut self, series_id: SeriesId, tags: &[(String, String)]) {
+        assert!(
+            series_id <= u32::MAX as u64,
+            "SeriesId {} exceeds u32::MAX — RoaringBitmap only supports u32 keys",
+            series_id
+        );
         self.series_tags.insert(series_id, tags.to_vec());
         for (key, value) in tags {
             let posting_key = format!("{}={}", key, value);
@@ -122,16 +127,18 @@ impl InvertedIndex {
             return RoaringBitmap::new();
         }
 
-        let bitmaps: Vec<RoaringBitmap> = filters
-            .iter()
-            .map(|(k, v)| self.query_exact(k, v))
-            .collect();
-
-        let mut result = bitmaps[0].clone();
-        for bitmap in &bitmaps[1..] {
-            result &= bitmap;
+        let mut result = None;
+        for (k, v) in filters {
+            let posting_key = format!("{}={}", k, v);
+            match self.postings.get(&posting_key) {
+                None => return RoaringBitmap::new(),
+                Some(bitmap) => match &mut result {
+                    None => result = Some(bitmap.clone()),
+                    Some(r) => *r &= bitmap,
+                },
+            }
         }
-        result
+        result.unwrap_or_default()
     }
 
     /// 并集查询 — 任一 tag 条件满足即可（OR 语义）
@@ -192,7 +199,7 @@ impl InvertedIndex {
     ///   [series_id: u64] [tags_count: u32]
     ///     [k_len: u32] [k_bytes] [v_len: u32] [v_bytes]  × M  × N
     /// ```
-    pub fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Option<Vec<u8>> {
         let mut buf = Vec::new();
         buf.extend_from_slice(&(self.postings.len() as u32).to_le_bytes());
         for (key, bitmap) in &self.postings {
@@ -200,7 +207,7 @@ impl InvertedIndex {
             buf.extend_from_slice(&(key_bytes.len() as u32).to_le_bytes());
             buf.extend_from_slice(key_bytes);
             let mut bm_data = Vec::new();
-            bitmap.serialize_into(&mut bm_data).unwrap_or(());
+            bitmap.serialize_into(&mut bm_data).ok()?;
             buf.extend_from_slice(&(bm_data.len() as u32).to_le_bytes());
             buf.extend_from_slice(&bm_data);
         }
@@ -216,7 +223,7 @@ impl InvertedIndex {
                 buf.extend_from_slice(v.as_bytes());
             }
         }
-        buf
+        Some(buf)
     }
 
     /// 从二进制数据反序列化重建倒排索引

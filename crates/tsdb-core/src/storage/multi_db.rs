@@ -63,14 +63,15 @@ impl MultiDbManager {
     /// # 参数
     /// - `name`: 数据库名称（如 `"stocks"`, `"iot"`）
     pub fn create_database(&self, name: &str) -> Result<Arc<StorageEngine>> {
-        {
-            let dbs = self.databases.read().unwrap();
-            if dbs.contains_key(name) {
-                return Err(TsdbError::Storage(format!(
-                    "database '{}' already exists",
-                    name
-                )));
-            }
+        let mut dbs = self
+            .databases
+            .write()
+            .map_err(|e| TsdbError::Storage(format!("database lock poisoned: {}", e)))?;
+        if dbs.contains_key(name) {
+            return Err(TsdbError::Storage(format!(
+                "database '{}' already exists",
+                name
+            )));
         }
 
         let db_path = self.data_dir.join(name);
@@ -79,10 +80,7 @@ impl MultiDbManager {
         let engine = StorageEngine::open(&db_path, self.cf_config.clone())?;
         let engine = Arc::new(engine);
 
-        self.databases
-            .write()
-            .unwrap()
-            .insert(name.to_string(), Arc::clone(&engine));
+        dbs.insert(name.to_string(), Arc::clone(&engine));
 
         info!("database '{}' created at {:?}", name, db_path);
         Ok(engine)
@@ -99,7 +97,7 @@ impl MultiDbManager {
     pub fn get_database(&self, name: &str) -> Result<Arc<StorageEngine>> {
         self.databases
             .read()
-            .unwrap()
+            .map_err(|e| TsdbError::Storage(format!("database lock poisoned: {}", e)))?
             .get(name)
             .cloned()
             .ok_or_else(|| TsdbError::NotFound(format!("database '{}'", name)))
@@ -119,7 +117,11 @@ impl MultiDbManager {
             ));
         }
 
-        let removed = self.databases.write().unwrap().remove(name);
+        let removed = self
+            .databases
+            .write()
+            .map_err(|e| TsdbError::Storage(format!("database lock poisoned: {}", e)))?
+            .remove(name);
         if removed.is_none() {
             return Err(TsdbError::NotFound(format!("database '{}'", name)));
         }
@@ -135,29 +137,43 @@ impl MultiDbManager {
 
     /// 列出所有已注册的数据库名称
     pub fn list_databases(&self) -> Vec<String> {
-        self.databases.read().unwrap().keys().cloned().collect()
+        self.databases
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .cloned()
+            .collect()
     }
 
     /// 返回已注册的数据库数量
     pub fn database_count(&self) -> usize {
-        self.databases.read().unwrap().len()
+        self.databases
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 
     /// 确保默认数据库已初始化（服务启动时调用）
     pub fn ensure_default(&self) -> Result<Arc<StorageEngine>> {
-        {
-            let dbs = self.databases.read().unwrap();
-            if let Some(engine) = dbs.get("default") {
-                return Ok(Arc::clone(engine));
-            }
+        let mut dbs = self
+            .databases
+            .write()
+            .map_err(|e| TsdbError::Storage(format!("database lock poisoned: {}", e)))?;
+        if let Some(engine) = dbs.get("default") {
+            return Ok(Arc::clone(engine));
         }
-        self.create_database("default")
+        let db_path = self.data_dir.join("default");
+        std::fs::create_dir_all(&db_path)?;
+        let engine = StorageEngine::open(&db_path, self.cf_config.clone())?;
+        let engine = Arc::new(engine);
+        dbs.insert("default".to_string(), Arc::clone(&engine));
+        Ok(engine)
     }
 
     /// 清理所有数据库的过期列族
     pub fn cleanup_all(&self) -> Result<Vec<(String, Vec<String>)>> {
         let mut results = Vec::new();
-        let dbs = self.databases.read().unwrap();
+        let dbs = self.databases.read().unwrap_or_else(|e| e.into_inner());
         for (name, engine) in dbs.iter() {
             match engine.cleanup() {
                 Ok(dropped) if !dropped.is_empty() => {

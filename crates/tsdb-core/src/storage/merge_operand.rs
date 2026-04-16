@@ -271,7 +271,11 @@ impl MergedBlock {
         tags: tsdb_types::model::Tags,
     ) -> Option<tsdb_types::model::DataPoint> {
         // 计算目标时间戳对应的微秒偏移量
-        let target_offset = (target_ts - block_start) as u32;
+        let target_offset = target_ts - block_start;
+        if !(0..=30_000_000i64).contains(&target_offset) {
+            return None;
+        }
+        let target_offset = target_offset as u32;
 
         let mut dp = tsdb_types::model::DataPoint::new(measurement, target_ts);
         dp.tags = tags;

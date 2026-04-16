@@ -179,26 +179,29 @@ impl AggregationStoreManager {
 
     /// 获取或创建指定业务的聚合存储
     pub fn get_store(&self, business: &str) -> Result<Arc<AggregationStore>, String> {
-        {
-            let stores = self.stores.lock().unwrap();
-            if let Some(store) = stores.get(business) {
-                return Ok(Arc::clone(store));
-            }
+        let mut stores = self
+            .stores
+            .lock()
+            .map_err(|e| format!("store lock poisoned: {}", e))?;
+        if let Some(store) = stores.get(business) {
+            return Ok(Arc::clone(store));
         }
 
         let store = AggregationStore::open(&self.data_dir, business)?;
         let store = Arc::new(store);
 
-        self.stores
-            .lock()
-            .unwrap()
-            .insert(business.to_string(), Arc::clone(&store));
+        stores.insert(business.to_string(), Arc::clone(&store));
         Ok(store)
     }
 
     /// 列出所有已打开的业务存储
     pub fn list_businesses(&self) -> Vec<String> {
-        self.stores.lock().unwrap().keys().cloned().collect()
+        self.stores
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .cloned()
+            .collect()
     }
 }
 

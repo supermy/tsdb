@@ -180,7 +180,7 @@ impl IndexManager {
     ///
     /// # 返回
     /// key-value 映射表，可直接逐条写入 RocksDB metadata CF
-    pub fn serialize_all(&self) -> HashMap<String, Vec<u8>> {
+    pub fn serialize_all(&self) -> Option<HashMap<String, Vec<u8>>> {
         let mut result = HashMap::new();
         for (measurement, sl) in &self.time_index {
             let key = format!("index:time:{}", measurement);
@@ -188,13 +188,13 @@ impl IndexManager {
         }
         for (measurement, idx) in &self.tag_index {
             let key = format!("index:tag:{}", measurement);
-            result.insert(key, idx.serialize());
+            result.insert(key, idx.serialize()?);
         }
         result.insert(
             "index:meta:next_series_id".to_string(),
             self.next_series_id.to_le_bytes().to_vec(),
         );
-        result
+        Some(result)
     }
 
     /// 从单条持久化数据恢复索引条目（启动时调用）

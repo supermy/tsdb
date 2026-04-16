@@ -768,7 +768,9 @@ impl StorageEngine {
     /// 建议在服务关闭前或定期（如每 5 分钟）调用。
     pub fn persist_index(&self, index_manager: &tsdb_index::IndexManager) -> Result<()> {
         let cf = self.cf_manager.cf_handle(METADATA_CF)?;
-        let serialized = index_manager.serialize_all();
+        let serialized = index_manager
+            .serialize_all()
+            .ok_or_else(|| TsdbError::Storage("index serialization failed".into()))?;
 
         let mut batch = WriteBatch::default();
         for (key, value) in &serialized {

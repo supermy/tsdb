@@ -54,8 +54,12 @@ pub struct DimensionTable {
     db: Arc<DB>,
     /// Tag Key → ID 的内存映射表（写时复制语义，Mutex 保护）
     tag_key_ids: std::sync::Mutex<HashMap<String, u32>>,
+    /// ID → Tag Key 的反向映射表（加速解码查询）
+    tag_key_reverse: std::sync::Mutex<HashMap<u32, String>>,
     /// (Key_ID, Tag_Value) → ID 的内存映射表（复合键确保全局唯一）
     tag_value_ids: std::sync::Mutex<HashMap<(u32, String), u32>>,
+    /// ID → (Key_ID, Tag_Value) 的反向映射表（加速解码查询）
+    tag_value_reverse: std::sync::Mutex<HashMap<u32, (u32, String)>>,
     /// 下一个可用的 Tag Key ID（原子自增，从 1 开始）
     next_key_id: AtomicU64,
     /// 下一个可用的 Tag Value ID（原子自增，从 1 开始）
@@ -70,7 +74,9 @@ impl DimensionTable {
         Self {
             db,
             tag_key_ids: std::sync::Mutex::new(HashMap::new()),
+            tag_key_reverse: std::sync::Mutex::new(HashMap::new()),
             tag_value_ids: std::sync::Mutex::new(HashMap::new()),
+            tag_value_reverse: std::sync::Mutex::new(HashMap::new()),
             next_key_id: AtomicU64::new(1),
             next_value_id: AtomicU64::new(1),
         }
@@ -87,12 +93,16 @@ impl DimensionTable {
     /// # 返回
     /// 该 key 对应的唯一整型 ID（u32）
     pub fn encode_tag_key(&self, key: &str) -> u32 {
-        let mut map = self.tag_key_ids.lock().unwrap();
+        let mut map = self.tag_key_ids.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(&id) = map.get(key) {
             return id;
         }
         let id = self.next_key_id.fetch_add(1, Ordering::Relaxed) as u32;
         map.insert(key.to_string(), id);
+        self.tag_key_reverse
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, key.to_string());
         id
     }
 
@@ -105,8 +115,11 @@ impl DimensionTable {
     /// - `Some(String)`: 对应的原始 tag key
     /// - `None`: 该 ID 不存在（可能已被清理或从未分配）
     pub fn decode_tag_key(&self, id: u32) -> Option<String> {
-        let map = self.tag_key_ids.lock().unwrap();
-        map.iter().find(|(_, &v)| v == id).map(|(k, _)| k.clone())
+        let reverse = self
+            .tag_key_reverse
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        reverse.get(&id).cloned()
     }
 
     /// 对 Tag Value 进行字典编码，返回对应的整型 ID
@@ -121,13 +134,17 @@ impl DimensionTable {
     /// # 返回
     /// 该 (key, value) 对对应的唯一整型 ID（u32）
     pub fn encode_tag_value(&self, key_id: u32, value: &str) -> u32 {
-        let mut map = self.tag_value_ids.lock().unwrap();
+        let mut map = self.tag_value_ids.lock().unwrap_or_else(|e| e.into_inner());
         let key = (key_id, value.to_string());
         if let Some(&id) = map.get(&key) {
             return id;
         }
         let id = self.next_value_id.fetch_add(1, Ordering::Relaxed) as u32;
-        map.insert(key, id);
+        map.insert(key.clone(), id);
+        self.tag_value_reverse
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, key);
         id
     }
 
@@ -141,10 +158,17 @@ impl DimensionTable {
     /// - `Some(String)`: 对应的原始 tag value
     /// - `None`: 该组合不存在
     pub fn decode_tag_value(&self, key_id: u32, value_id: u32) -> Option<String> {
-        let map = self.tag_value_ids.lock().unwrap();
-        map.iter()
-            .find(|((k, _), &v)| *k == key_id && v == value_id)
-            .map(|((_, v), _)| v.clone())
+        let reverse = self
+            .tag_value_reverse
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        reverse.get(&value_id).and_then(|(kid, val)| {
+            if *kid == key_id {
+                Some(val.clone())
+            } else {
+                None
+            }
+        })
     }
 
     /// 对完整的 Tags 集合进行批量编码
@@ -214,12 +238,18 @@ impl DimensionTable {
 
     /// 返回当前已注册的 Tag Key 数量（用于监控和调试）
     pub fn tag_key_count(&self) -> usize {
-        self.tag_key_ids.lock().unwrap().len()
+        self.tag_key_ids
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 
     /// 返回当前已注册的 Tag Value 数量（用于监控和调试）
     pub fn tag_value_count(&self) -> usize {
-        self.tag_value_ids.lock().unwrap().len()
+        self.tag_value_ids
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 }
 

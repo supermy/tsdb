@@ -298,28 +298,24 @@ impl SkipList {
             return None;
         }
 
-        // 读取节点数量
         let node_count = u32::from_le_bytes(data[0..4].try_into().ok()?) as usize;
 
-        // 创建空跳表
         let mut sl = Self::new(16);
         let mut offset = 4;
+        let mut key_to_idx: std::collections::HashMap<Timestamp, usize> =
+            std::collections::HashMap::new();
 
-        // 逐个恢复节点
         for _ in 0..node_count {
             if offset + 12 > data.len() {
                 return None;
             }
 
-            // 读取键
             let key = i64::from_le_bytes(data[offset..offset + 8].try_into().ok()?);
             offset += 8;
 
-            // 读取偏移量数量
             let off_count = u32::from_le_bytes(data[offset..offset + 4].try_into().ok()?) as usize;
             offset += 4;
 
-            // 读取每个偏移量
             for j in 0..off_count {
                 if offset + 8 > data.len() {
                     return None;
@@ -328,14 +324,10 @@ impl SkipList {
                 offset += 8;
 
                 if j == 0 {
-                    // 第一个偏移量使用 insert 创建节点
                     sl.insert(key, block_offset);
-                } else {
-                    // 后续偏移量直接追加到已有节点
-                    if let Some(node) = sl.nodes.iter_mut().find(|n| n.key == key && !n.is_sentinel)
-                    {
-                        node.block_offsets.push(block_offset);
-                    }
+                    key_to_idx.insert(key, sl.nodes.len() - 1);
+                } else if let Some(&idx) = key_to_idx.get(&key) {
+                    sl.nodes[idx].block_offsets.push(block_offset);
                 }
             }
         }

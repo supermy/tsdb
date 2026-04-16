@@ -30,13 +30,28 @@ pub fn tsdb_compare(a: &[u8], b: &[u8]) -> Ordering {
         ord => return ord,
     }
 
-    a_parts.block_ts.cmp(&b_parts.block_ts)
+    match a_parts.block_ts.cmp(&b_parts.block_ts) {
+        Ordering::Equal => {}
+        ord => return ord,
+    }
+
+    if a_parts.qualifier.is_empty() && b_parts.qualifier.is_empty() {
+        return Ordering::Equal;
+    }
+    if a_parts.qualifier.is_empty() {
+        return Ordering::Less;
+    }
+    if b_parts.qualifier.is_empty() {
+        return Ordering::Greater;
+    }
+    a_parts.qualifier.cmp(b_parts.qualifier)
 }
 
 struct RowKeyParts<'a> {
     measurement: &'a [u8],
     tags_hash: u64,
     block_ts: i64,
+    qualifier: &'a [u8],
 }
 
 fn split_rowkey(data: &[u8]) -> RowKeyParts<'_> {
@@ -53,6 +68,7 @@ fn split_rowkey(data: &[u8]) -> RowKeyParts<'_> {
             measurement,
             tags_hash: 0,
             block_ts: 0,
+            qualifier: &[],
         };
     }
 
@@ -73,19 +89,27 @@ fn split_rowkey(data: &[u8]) -> RowKeyParts<'_> {
             measurement,
             tags_hash: 0,
             block_ts: 0,
+            qualifier: &[],
         };
     }
 
-    let block_ts = if block_ts_rest.len() == 8 {
-        i64::from_be_bytes(block_ts_rest.try_into().unwrap_or([0; 8]))
+    let (block_ts, qualifier) = if block_ts_rest.len() >= 8 {
+        let ts = i64::from_be_bytes(block_ts_rest[..8].try_into().unwrap_or([0; 8]));
+        let qual = if block_ts_rest.len() > 8 && block_ts_rest[8] == 0x00 {
+            &block_ts_rest[9..]
+        } else {
+            &[]
+        };
+        (ts, qual)
     } else {
-        0
+        (0, &[] as &[u8])
     };
 
     RowKeyParts {
         measurement,
         tags_hash,
         block_ts,
+        qualifier,
     }
 }
 
@@ -138,12 +162,23 @@ mod tests {
     fn test_compare_with_qualifier_key() {
         let mut a = make_key("cpu", 100, 1000);
         a.push(0x00);
-        a.extend_from_slice(b"usage:15000");
+        a.extend_from_slice(b"system:15000");
 
         let mut b = make_key("cpu", 100, 1000);
         b.push(0x00);
-        b.extend_from_slice(b"system:15000");
+        b.extend_from_slice(b"usage:15000");
 
-        assert_eq!(tsdb_compare(&a, &b), Ordering::Equal);
+        assert_eq!(tsdb_compare(&a, &b), Ordering::Less);
+    }
+
+    #[test]
+    fn test_compare_rowkey_vs_qualifier_key() {
+        let rowkey_only = make_key("cpu", 100, 1000);
+
+        let mut with_qualifier = make_key("cpu", 100, 1000);
+        with_qualifier.push(0x00);
+        with_qualifier.extend_from_slice(b"usage:15000");
+
+        assert_eq!(tsdb_compare(&rowkey_only, &with_qualifier), Ordering::Less);
     }
 }

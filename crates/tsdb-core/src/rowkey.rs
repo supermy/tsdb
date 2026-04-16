@@ -203,7 +203,15 @@ impl Qualifier {
         timestamp: Timestamp,
         block_start: Timestamp,
     ) -> Self {
-        let offset_micros = (timestamp - block_start) as u64;
+        let offset_micros = timestamp - block_start;
+        assert!(
+            offset_micros >= 0 && offset_micros <= BLOCK_DURATION_MICROS as i64,
+            "Qualifier offset {} out of range [0, {}]: timestamp={}, block_start={}",
+            offset_micros,
+            BLOCK_DURATION_MICROS,
+            timestamp,
+            block_start
+        );
         Self {
             field_name: field_name.into(),
             microsecond_offset: offset_micros as u32,

@@ -589,7 +589,9 @@ fn bench_index_performance() -> anyhow::Result<()> {
 
     // 序列化/反序列化
     let start = Instant::now();
-    let serialized = inv_idx.serialize();
+    let serialized = inv_idx
+        .serialize()
+        .expect("InvertedIndex serialization failed");
     let ser_time = start.elapsed();
     println!(
         "  序列化: {}B, {:.2}ms",

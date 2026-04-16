@@ -107,7 +107,7 @@ pub struct PerformanceDashboard {
     /// 性能指标卡片列表
     pub gauges: Vec<PerformanceMetric>,
     /// 历史时间戳记录（环形缓冲区，上限 3600 条 ≈ 1 小时@1Hz）
-    pub history: Vec<TimestampRecord>,
+    pub history: std::collections::VecDeque<TimestampRecord>,
 }
 
 /// 单条时间戳记录 — 用于写入/读取量的历史追踪
@@ -136,7 +136,7 @@ impl PerformanceDashboard {
         Self {
             system_metrics: None,
             gauges: Vec::new(),
-            history: Vec::new(),
+            history: std::collections::VecDeque::new(),
         }
     }
 
@@ -155,9 +155,9 @@ impl PerformanceDashboard {
     ///
     /// 当历史记录超过 3600 条时自动移除最旧的记录（FIFO）。
     pub fn record(&mut self, record: TimestampRecord) {
-        self.history.push(record);
+        self.history.push_back(record);
         if self.history.len() > 3600 {
-            self.history.remove(0);
+            self.history.pop_front();
         }
     }
 

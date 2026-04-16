@@ -132,7 +132,10 @@ impl CfManager {
             .create_cf(&cf_name, &cf_opts)
             .map_err(|e| TsdbError::Storage(format!("failed to create CF {}: {}", cf_name, e)))?;
 
-        self.known_cfs.lock().unwrap().push(cf_name);
+        self.known_cfs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(cf_name);
         Ok(())
     }
 
@@ -169,7 +172,11 @@ impl CfManager {
             - chrono::Duration::days(self.config.retention_days as i64);
         let mut dropped = Vec::new();
 
-        let cfs_to_check: Vec<String> = self.known_cfs.lock().unwrap().clone();
+        let cfs_to_check: Vec<String> = self
+            .known_cfs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         for cf_name in &cfs_to_check {
             if cf_name == METADATA_CF {
                 continue;
@@ -188,7 +195,7 @@ impl CfManager {
         }
 
         if !dropped.is_empty() {
-            let mut known = self.known_cfs.lock().unwrap();
+            let mut known = self.known_cfs.lock().unwrap_or_else(|e| e.into_inner());
             known.retain(|n| !dropped.contains(n));
         }
 

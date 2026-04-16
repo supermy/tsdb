@@ -89,7 +89,7 @@ impl LightAggregationPipeline {
         let bucket_key = format!("{}:{}", business, dp.measurement);
 
         {
-            let mut aggregators = self.aggregators.lock().unwrap();
+            let mut aggregators = self.aggregators.lock().unwrap_or_else(|e| e.into_inner());
             aggregators
                 .entry(bucket_key.clone())
                 .or_default()
@@ -97,7 +97,7 @@ impl LightAggregationPipeline {
         }
 
         let should_flush = {
-            let mut counts = self.buffer_counts.lock().unwrap();
+            let mut counts = self.buffer_counts.lock().unwrap_or_else(|e| e.into_inner());
             let count = counts.entry(bucket_key.clone()).or_insert(0);
             *count += 1;
             *count >= self.config.buffer_size
@@ -110,7 +110,7 @@ impl LightAggregationPipeline {
         }
 
         let should_timer_flush = {
-            let mut last = self.last_flush.lock().unwrap();
+            let mut last = self.last_flush.lock().unwrap_or_else(|e| e.into_inner());
             if last.elapsed() >= Duration::from_secs(self.config.flush_interval_secs) {
                 *last = Instant::now();
                 true
@@ -128,8 +128,8 @@ impl LightAggregationPipeline {
 
     /// 刷新指定桶的聚合结果到存储
     fn flush_bucket(&self, bucket_key: &str, business: &str) -> Result<(), String> {
-        let mut aggregators = self.aggregators.lock().unwrap();
-        let mut counts = self.buffer_counts.lock().unwrap();
+        let mut aggregators = self.aggregators.lock().unwrap_or_else(|e| e.into_inner());
+        let mut counts = self.buffer_counts.lock().unwrap_or_else(|e| e.into_inner());
 
         if let Some(mut aggregator) = aggregators.remove(bucket_key) {
             counts.remove(bucket_key);
@@ -158,7 +158,13 @@ impl LightAggregationPipeline {
 
     /// 刷新所有桶的聚合结果
     pub fn flush_all(&self) -> Result<(), String> {
-        let bucket_keys: Vec<String> = self.aggregators.lock().unwrap().keys().cloned().collect();
+        let bucket_keys: Vec<String> = self
+            .aggregators
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .cloned()
+            .collect();
 
         for key in &bucket_keys {
             let business = key.split(':').next().unwrap_or("default").to_string();
@@ -171,12 +177,19 @@ impl LightAggregationPipeline {
 
     /// 返回当前缓冲的数据点总数
     pub fn buffered_count(&self) -> usize {
-        self.buffer_counts.lock().unwrap().values().sum()
+        self.buffer_counts
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .sum()
     }
 
     /// 返回当前活跃的桶数量
     pub fn bucket_count(&self) -> usize {
-        self.aggregators.lock().unwrap().len()
+        self.aggregators
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 }
 

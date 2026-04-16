@@ -149,7 +149,15 @@ impl BlockWriter {
             block_start_ts: block_start,
         };
 
-        let qualifier_offset = (dp.timestamp - block_start) as u32;
+        let qualifier_offset = dp.timestamp - block_start;
+        assert!(
+            qualifier_offset >= 0
+                && qualifier_offset <= crate::rowkey::BLOCK_DURATION_MICROS as i64,
+            "qualifier_offset {} out of range [0, {}]",
+            qualifier_offset,
+            crate::rowkey::BLOCK_DURATION_MICROS
+        );
+        let qualifier_offset = qualifier_offset as u32;
 
         let block = self.buffers.entry(bk.clone()).or_default();
         for (field_name, field_value) in &dp.fields {

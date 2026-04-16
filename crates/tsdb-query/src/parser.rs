@@ -330,17 +330,16 @@ impl SqlParser {
                         if let sqlparser::ast::FunctionArg::Unnamed(arg_expr) = arg {
                             match arg_expr {
                                 sqlparser::ast::FunctionArgExpr::Expr(Expr::Identifier(ident)) => {
-                                    return Some(ident.value.clone());
+                                    Some(ident.value.clone())
                                 }
                                 sqlparser::ast::FunctionArgExpr::Expr(Expr::Value(
                                     Value::Number(n, _),
-                                )) => {
-                                    return Some(n.to_string());
-                                }
-                                _ => {}
+                                )) => Some(n.to_string()),
+                                _ => None,
                             }
+                        } else {
+                            None
                         }
-                        None
                     })
                     .unwrap_or_default()
             }
@@ -375,7 +374,12 @@ impl SqlParser {
                 BinaryOperator::Eq => {
                     self.extract_comparison(left, right, FilterOp::Eq, time_range, tag_filters)?;
                 }
-                _ => {}
+                _ => {
+                    return Err(ParseError::Unsupported(format!(
+                        "unsupported WHERE operator: {:?} (only AND and = are currently supported)",
+                        op
+                    )));
+                }
             }
         }
         Ok(())
